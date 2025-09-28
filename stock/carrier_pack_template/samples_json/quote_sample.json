@@ -1,0 +1,8 @@
+{
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "carrier": "carrier_code",
+  "origin": {"name": "Warehouse", "city": "Hamilton", "postcode": "3204", "country": "NZ"},
+  "destination": {"name": "Store", "city": "Auckland", "postcode": "1010", "country": "NZ", "rural": false},
+  "packages": [ {"name": "Box 1", "length_cm": 30, "width_cm": 20, "height_cm": 15, "weight_kg": 2.4 } ],
+  "quotes": [ {"service_code": "std", "service_name": "Standard", "total": {"amount": 8.95, "currency": "NZD"}, "breakdown": {"base": 7.5, "fuel": 0.75}, "eta_days": "1-2"} ]
+}

@@ -1,0 +1,2 @@
+Role,Create Shipment (Y/N),Void Shipment (Y/N),See Rates (Y/N),See Costs (Y/N),Print Labels (Y/N),View Tracking (Y/N),Admin Required? (Y/N),Notes
+Warehouse Packer,Y,N,Y,N,Y,Y,N,

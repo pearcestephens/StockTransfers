@@ -1,0 +1,8 @@
+Sample Type,File Name (attach in email or include in ZIP),Notes
+quote,quote_sample.json,
+reserve,reserve_sample.json,
+create_label,create_label_sample.json,
+tracking_in_transit,tracking_in_transit.json,
+tracking_delivered,tracking_delivered.json,
+void,void_sample.json,
+error_example,error_sample.json,

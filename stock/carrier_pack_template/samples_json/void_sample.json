@@ -1,0 +1,6 @@
+{
+  "shipment_id": "22222222-2222-2222-2222-222222222222",
+  "voided": true,
+  "refunded": false,
+  "message": "Shipment voided before pickup"
+}

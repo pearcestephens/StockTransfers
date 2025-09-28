@@ -1,0 +1,25 @@
+<?php
+declare(strict_types=1);
+require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
+header('Content-Type: application/json');
+
+use Modules\Transfers\Stock\Services\PackLockService;
+use Modules\Transfers\Stock\Services\LockAuditService;
+
+if(!isset($_SESSION['userID'])){ http_response_code(401); echo json_encode(['success'=>false,'error'=>'unauth']); exit; }
+$transferId = isset($_POST['transfer_id']) ? (int)$_POST['transfer_id'] : 0;
+if($transferId<=0){ echo json_encode(['success'=>false,'error'=>'invalid_transfer']); exit; }
+
+try {
+    $uid = (int)$_SESSION['userID'];
+    $svc = new PackLockService();
+    $audit = new LockAuditService();
+    $result = $svc->heartbeat($transferId, $uid);
+    if(!($result['success']??false)) {
+        $audit->heartbeat($transferId,$uid,false);
+    }
+    echo json_encode($result);
+} catch(Throwable $e){
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>'exception','message'=>$e->getMessage()]);
+}

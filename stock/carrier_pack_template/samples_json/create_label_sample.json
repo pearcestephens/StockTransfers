@@ -1,0 +1,7 @@
+{
+  "shipment_id": "22222222-2222-2222-2222-222222222222",
+  "carrier": "carrier_code",
+  "service_code": "std",
+  "labels": [ {"package_index": 0, "format": "PDF", "dpi": 300, "label_url": "https://example/label1.pdf", "tracking_number": "TRACK123456"} ],
+  "charges": {"total": {"amount": 8.95, "currency": "NZD"}}
+}
