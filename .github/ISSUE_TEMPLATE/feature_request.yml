@@ -1,0 +1,135 @@
+name: Feature Request
+description: Suggest a new feature for the Stock Transfers System
+title: "[FEATURE]: "
+labels: ["enhancement", "feature-request"]
+assignees: ["pearcestephens"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature for the Stock Transfers System!
+        
+        Please provide as much detail as possible to help us understand your needs.
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: A clear and concise description of the feature you'd like to see
+      placeholder: What would you like to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: What problem would this feature solve? What pain point does it address?
+      placeholder: Describe the current challenge or limitation...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How do you envision this feature working?
+      placeholder: Describe your ideal solution in detail...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: user-type
+    attributes:
+      label: Who would benefit from this feature?
+      description: Select all that apply
+      multiple: true
+      options:
+        - Store Staff
+        - Store Managers
+        - Head Office Staff
+        - IT/Admin Users
+        - Customers
+        - Suppliers
+        - All Users
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Which module/area would this affect?
+      description: Select the primary area this feature relates to
+      options:
+        - Stock Transfer Creation
+        - Receiving Interface
+        - Pack & Ship Workflow
+        - Freight/Shipping Integration
+        - Reporting & Analytics
+        - User Interface/UX
+        - API/Integrations
+        - Mobile Experience
+        - Performance
+        - Security
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority/Impact
+      description: How important is this feature?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve efficiency
+        - High - Significantly impacts workflow
+        - Critical - Blocking current processes
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: What workarounds are you currently using? Are there alternative approaches?
+      placeholder: Describe any current workarounds or alternative solutions you've considered...
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockups, or examples about the feature request
+      placeholder: Any screenshots, mockups, or examples would be helpful...
+
+  - type: input
+    id: business-impact
+    attributes:
+      label: Business Impact
+      description: How would this feature impact business operations?
+      placeholder: e.g., "Would save 2 hours per day across all stores"
+
+  - type: checkboxes
+    id: technical-considerations
+    attributes:
+      label: Technical Considerations (optional)
+      description: Are there any technical aspects to consider?
+      options:
+        - label: This may require database changes
+        - label: This may require API changes
+        - label: This may require mobile app changes
+        - label: This may require third-party integrations
+        - label: This may impact performance
+        - label: This may affect security
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to ensure this feature hasn't been requested
+          required: true
+        - label: I have provided sufficient detail about the feature and its benefits
+          required: true
+        - label: I understand this is a request and not a guarantee of implementation
+          required: true

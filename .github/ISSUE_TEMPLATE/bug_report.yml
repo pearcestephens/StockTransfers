@@ -1,0 +1,135 @@
+name: Bug Report
+description: File a bug report for the Stock Transfers System
+title: "[BUG]: "
+labels: ["bug", "triage"]
+assignees: ["pearcestephens"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report for the Stock Transfers System!
+        
+        **⚠️ Security Issues**: Please do NOT file security vulnerabilities here. See [SECURITY.md](../SECURITY.md) for how to report security issues.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Which environment did this occur in?
+      options:
+        - Production (staff.vapeshed.co.nz)
+        - Staging
+        - Development
+        - Local
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module/Component
+      description: Which part of the system is affected?
+      options:
+        - Stock Transfer Creation
+        - Receiving Interface
+        - Pack & Ship
+        - Freight Integration
+        - API Endpoints
+        - User Interface
+        - Reports/Analytics
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Please provide detailed steps to reproduce the issue
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See error
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should have happened instead?
+      placeholder: A clear description of what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots/Logs
+      description: If applicable, add screenshots or error logs to help explain your problem.
+      placeholder: Paste screenshots or log entries here...
+
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: Browser
+      description: Which browser(s) are you using?
+      multiple: true
+      options:
+        - Firefox
+        - Chrome
+        - Safari
+        - Microsoft Edge
+        - Other
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How critical is this issue?
+      options:
+        - Low - Minor issue
+        - Medium - Affects some users
+        - High - Affects many users
+        - Critical - System broken
+    validations:
+      required: true
+
+  - type: input
+    id: store-location
+    attributes:
+      label: Store Location (if applicable)
+      description: Which Vape Shed location experienced this issue?
+      placeholder: e.g., Auckland CBD, Christchurch, Head Office
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here.
+      placeholder: Any other details that might be helpful...
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have provided all necessary information to reproduce the issue
+          required: true
+        - label: This is not a security vulnerability (use SECURITY.md for those)
+          required: true
