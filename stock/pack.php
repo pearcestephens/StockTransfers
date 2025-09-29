@@ -31,6 +31,9 @@ if ($DOCUMENT_ROOT === '' || !is_dir($DOCUMENT_ROOT)) {
 }
 require_once $DOCUMENT_ROOT . '/app.php';
 
+// Load shared transfers infrastructure (includes AssetLoader)
+require_once __DIR__ . '/../_shared/Autoload.php';
+
 // PSR-4ish autoloader for Modules\
 spl_autoload_register(static function (string $class): void {
   $prefix = 'Modules\\';
@@ -722,8 +725,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
             <section id="psx-app" class="psx<?= $showCourierDetail ? '' : ' psx-manual-mode' ?>" aria-label="Pack & Ship Panel">
                       <?php // Dispatch Console (View) ?>
 
-  <link rel="stylesheet" href="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/css/dispatch.css?v=1.2">
-  <link rel="stylesheet" href="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/css/pack-extracted.css?v=1.0">
+  <?= load_transfer_css(); ?>
 
   <div class="wrapper">
     <!-- HEADER & BODY -->
@@ -1107,20 +1109,13 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
   <script>
   window.DISPATCH_BOOT = <?= json_encode($bootPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/js/dispatch.js?v=1.2"></script>
+  <?= load_transfer_js(); ?>
 
             </section>
           </div>
 
-          <!-- Page Assets (kept — page remains usable if any fail; terminal shows warnings) -->
-          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-common.css?v=1">
-          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack.css?v=1">
-<!--           <link rel="stylesheet" href="/assets/css/stock-transfers/shii.css?v=1"> -->
-          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack-inline.css?v=1">
+          <!-- Assets auto-loaded via load_transfer_css() and load_transfer_js() above -->
 
-          <script src="/assets/js/stock-transfers/transfers-common.js?v=1" defer></script>
-          <script src="/assets/js/stock-transfers/transfers-pack.js?v=1" defer></script>
-      <script src="/assets/js/stock-transfers/ship-ui.js?v=1" defer></script>
     </main>
   </div>
 
@@ -1128,9 +1123,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
   <?php include $DOCUMENT_ROOT . '/assets/template/personalisation-menu.php'; ?>
   <?php include $DOCUMENT_ROOT . '/assets/template/footer.php'; ?>
 
-
-  <script src="/assets/js/stock-transfers/pack-draft-status.js?v=1" defer></script>
-  <script src="/assets/js/stock-transfers/pack-product-search.js?v=1" defer></script>
+  <!-- Additional JS assets already loaded via load_transfer_js() above -->
 </body>
 
 </html>
