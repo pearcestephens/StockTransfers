@@ -203,7 +203,12 @@ class AssetLoader
     public static function forStockTransfers(string $basePath = null): self
     {
         // Point to the stock subfolder where assets are located
-        $basePath = $basePath ?: realpath(__DIR__ . '/../../../stock');
+        // From _shared/Core/ we need to go up 2 levels to get to transfers/, then into stock/
+        $basePath = $basePath ?: realpath(__DIR__ . '/../../stock');
+        
+        if (!$basePath) {
+            throw new \RuntimeException('Could not locate stock assets directory from: ' . __DIR__ . '/../../stock');
+        }
         
         return new self(
             basePath: $basePath,
