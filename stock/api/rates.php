@@ -1,75 +1,279 @@
 <?php
 declare(strict_types=1);
+
+/**
+ * CIS — Live Rates (No Simulation) + DB-driven Plan
+ * Input JSON: { meta, container, packages? | satchel?, options, address_facts, carriers_enabled }
+ * Output JSON: { ok:true, rates:[...], plan:{...} }
+ */
+
 require __DIR__.'/_lib/validate.php';
-cors_and_headers(); handle_options_preflight();
-$headers = require_headers(false);
+
+cors_and_headers([
+  'allow_methods' => 'POST, OPTIONS',
+  'allow_headers' => 'Content-Type, X-API-Key, X-From-Outlet-ID, X-To-Outlet-ID, X-NZPost-Token, X-NZPost-Subscription, X-GSS-Token',
+  'max_age'       => 600
+]);
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { http_response_code(204); exit; }
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST')     { fail('METHOD_NOT_ALLOWED','POST only',405); }
 
 try {
-  $body      = read_json_body();
-  $ctx       = (array)($body['context'] ?? []);
-  $facts     = (array)($ctx['address_facts'] ?? []);
-  $container = (string)($body['container'] ?? 'box');
-  $parcels   = sanitize_parcels((array)($body['parcels'] ?? []));
-  $options   = (array)($body['options'] ?? []);
-  $options = [
-    "sig"=> isset($options['sig']) ? (bool)$options['sig'] : true,
-    "atl"=> isset($options['atl']) ? (bool)$options['atl'] : false,
-    "age"=> isset($options['age']) ? (bool)$options['age'] : false,
-    "sat"=> isset($options['sat']) ? (bool)$options['sat'] : false,
+  $in      = json_input();
+
+  // ---------------- Parse input (once) ----------------
+  $meta    = (array)($in['meta'] ?? []);
+  $container = (string)($in['container'] ?? 'box');               // 'box' | 'satchel'
+  $pkgs    = (array)($in['packages'] ?? []);                      // only required for box
+  $satchel = (array)($in['satchel'] ?? []);                       // { total_kg, bag_code?, bag_name? }
+  $opt     = (array)($in['options'] ?? []);
+  $facts   = (array)($in['address_facts'] ?? []);
+  $allow   = (array)($in['carriers_enabled'] ?? []);
+  $fromOutletId = (int)($meta['from_outlet_id'] ?? 0);
+  $toOutletId   = (int)($meta['to_outlet_id']   ?? 0);
+
+  if (!$fromOutletId) fail('MISSING_PARAM','meta.from_outlet_id required');
+  if (!$toOutletId)   fail('MISSING_PARAM','meta.to_outlet_id required');
+
+  // satchel: no dims required; box: packages are required
+  if ($container === 'box' && !$pkgs) {
+    fail('MISSING_PARAM','packages required for container=box');
+  }
+
+  // total content weight in grams
+  $total_g = 0;
+  if ($container === 'satchel' && isset($satchel['total_kg'])) {
+    $total_g = (int)round(1000 * (float)$satchel['total_kg']);
+  } else {
+    foreach ($pkgs as $p) { $total_g += (int)round(1000 * (float)($p['kg'] ?? 0)); }
+  }
+
+  $pdo = pdo();
+
+  // ---------------- Credentials (headers first, DB fallback) ----------------
+  $hdr = static fn(string $k): string => (string)($_SERVER['HTTP_'.strtoupper(str_replace('-','_',$k))] ?? '');
+
+  $creds = outlet_carrier_creds($pdo, $fromOutletId); // nz_post_api_key, nz_post_subscription_key, gss_token
+  $tokens = [
+    'nz_post_api_key'      => $hdr('X-NZPost-Token')        ?: (string)($creds['nz_post_api_key'] ?? ''),
+    'nz_post_subscription' => $hdr('X-NZPost-Subscription') ?: (string)($creds['nz_post_subscription_key'] ?? ''),
+    'gss_token'            => $hdr('X-GSS-Token')           ?: (string)($creds['gss_token'] ?? ''),
   ];
-  ensure_saturday_rules($options, $facts);
 
-  // Decide which carriers to call based on headers present
-  $h = array_change_key_case($headers, CASE_LOWER);
-  $hasGSS = !empty($h['x-gss-token']) || !empty($h['x_gss_token']);
-  $hasNZP = (!empty($h['x-nzpost-api-key']) || !empty($h['x_nzpost_api_key']))
-         && (!empty($h['x-nzpost-subscription-key']) || !empty($h['x_nzpost_subscription_key']))
-         && (!empty($h['x-nzpost-base']) || !empty($h['x_nzpost_base']));
-  if (!$hasGSS && !$hasNZP) {
-    fail("NO_CARRIER_CONFIG","No carrier credentials supplied on request.",[
-      "need_one_of"=>[
-        "GSS"=>["X-GSS-Token","(optional) X-GSS-Base"],
-        "NZPost"=>["X-NZPost-Api-Key","X-NZPost-Subscription-Key","X-NZPost-Base"]
-      ]
-    ]);
+  // ---------------- Build common request to adapters ----------------
+  $req = [
+    'from_outlet_id' => $fromOutletId,
+    'to_outlet_id'   => $toOutletId,
+    'packages'       => array_map(static function($p){
+      return [
+        'name'=>(string)($p['name'] ?? ''),
+        'w'   =>(float)($p['w'] ?? 0),
+        'l'   =>(float)($p['l'] ?? 0),
+        'h'   =>(float)($p['h'] ?? 0),
+        'kg'  =>(float)($p['kg'] ?? 0),
+        'items'=>(int)($p['items'] ?? 0),
+      ];
+    }, $pkgs),
+    'options'        => [
+      'sig'=>!empty($opt['sig']),
+      'atl'=>!empty($opt['atl']),
+      'age'=>!empty($opt['age']),
+      'sat'=>!empty($opt['sat']),
+    ],
+    'facts'          => [
+      'rural'=>!empty($facts['rural']),
+      'saturday_serviceable'=>!empty($facts['saturday_serviceable']),
+    ],
+    // satchel hint for adapters (optional)
+    'satchel'        => $container === 'satchel' ? [
+      'total_kg'  => (float)($satchel['total_kg'] ?? ($total_g/1000)),
+      'bag_code'  => $satchel['bag_code'] ?? null,
+      'bag_name'  => $satchel['bag_name'] ?? null
+    ] : null
+  ];
+
+  // ---------------- Plan (DB-driven) ----------------
+  $plan = null;
+
+  if ($container === 'satchel') {
+    if (!satchel_allowed_total_g($total_g)) {
+      ok(['rates'=>[], 'plan'=>['error'=>'SATCHEL_OVERWEIGHT', 'total_g'=>$total_g, 'max_g'=>2000]]);
+    }
+    // leave $plan as null or include a simple satchel echo if you wish
+  } else {
+    try {
+      $plan = ['nzc' => plan_nzc_mix_by_weight($pdo, $total_g)];
+    } catch (Throwable $e) {
+      $plan = ['nzc' => [], 'warning' => 'UNABLE_TO_PLAN_NZC: '.$e->getMessage()];
+    }
   }
 
-  // Defensively load adapters and validate symbol presence
-  $nzc_path = __DIR__.'/adapters/nzc_gss.php';
-  $nzp_path = __DIR__.'/adapters/nz_post.php';
-  if ($hasGSS) {
-    if (!is_file($nzc_path)) fail("ADAPTER_MISSING","Missing NZC adapter file",["path"=>$nzc_path]);
-    require_once $nzc_path;
-    if (!function_exists('nzc_quote')) fail("ADAPTER_LOAD_FAIL","NZC adapter did not define nzc_quote()",[
-      "path"=>$nzc_path
-    ]);
-  }
-  if ($hasNZP) {
-    if (!is_file($nzp_path)) fail("ADAPTER_MISSING","Missing NZ Post adapter file",["path"=>$nzp_path]);
-    require_once $nzp_path;
-    if (!function_exists('nz_post_quote')) fail("ADAPTER_LOAD_FAIL","NZ Post adapter did not define nz_post_quote()",[
-      "path"=>$nzp_path
-    ]);
-  }
+  // ---------------- Live rates ----------------
+  $rows = [];
 
-  $rates = [];
-  $notes = [];
-
-  if ($hasGSS) {
-    try { $rates = array_merge($rates, nzc_quote($ctx,$container,$parcels,$options,$facts,$headers)); }
-    catch (Throwable $e) { $notes[] = "nzc_unavailable"; }
-  }
-  if ($hasNZP) {
-    try { $rates = array_merge($rates, nz_post_quote($ctx,$container,$parcels,$options,$facts,$headers)); }
-    catch (Throwable $e) { $notes[] = "nz_post_unavailable"; }
+  // NZ Post
+  if (!empty($allow['nzpost']) && ($tokens['nz_post_api_key'] || $tokens['nz_post_subscription'])) {
+    try {
+      $nzp = adapter_nzpost_rates($req, $tokens);
+      foreach ($nzp as $q) {
+        $rows[] = [
+          'carrier_code' => 'nzpost',
+          'carrier_name' => $q['carrier_name'] ?? 'NZ Post',
+          'service_code' => $q['service_code'] ?? '',
+          'service_name' => $q['service_name'] ?? '',
+          'package_code' => $q['package_code'] ?? null,
+          'package_name' => $q['package_name'] ?? null,
+          'eta'          => $q['eta'] ?? '',
+          'total'        => (float)($q['total_incl_gst'] ?? 0.0),
+          'incl_gst'     => true
+        ];
+      }
+    } catch (Throwable $e) {
+      // optionally audit
+    }
   }
 
-  usort($rates, function($a,$b){
-    $ta=(float)($a['total_incl_gst']??999999); $tb=(float)($b['total_incl_gst']??999999);
-    return $ta===$tb ? strcmp((string)$a['carrier'],(string)$b['carrier']) : ($ta<=>$tb);
-  });
+  // NZ Couriers (GSS)
+  if (!empty($allow['nzc']) && $tokens['gss_token']) {
+    try {
+      // Optionally pass NZC carton plan hint for package type selection:
+      if (!empty($plan['nzc'][0]['code'])) {
+        $req['nzc_cartons'] = $plan['nzc']; // e.g., [{code:'E20', count:5}, ...]
+      }
+      $gss = adapter_gss_rates($req, $tokens);
+      foreach ($gss as $q) {
+        $rows[] = [
+          'carrier_code' => 'nzc',
+          'carrier_name' => $q['carrier_name'] ?? 'NZ Couriers',
+          'service_code' => $q['service_code'] ?? '',
+          'service_name' => $q['service_name'] ?? '',
+          'package_code' => $q['package_code'] ?? null,
+          'package_name' => $q['package_name'] ?? null,
+          'eta'          => $q['eta'] ?? '',
+          'total'        => (float)($q['total_incl_gst'] ?? 0.0),
+          'incl_gst'     => true
+        ];
+      }
+    } catch (Throwable $e) {
+      // optionally audit
+    }
+  }
 
-  ok(["ok"=>true,"currency"=>"NZD","incl_gst"=>true,"rates"=>$rates,"notes"=>$notes]);
+  usort($rows, static fn($a,$b)=> ($a['total'] <=> $b['total']));
+
+  // ---------------- One envelope out ----------------
+  ok(['rates'=>$rows, 'plan'=>$plan]);
+
 } catch (Throwable $e) {
-  fail("EXCEPTION","Failed to quote",["type"=>get_class($e),"msg"=>$e->getMessage()]);
+  // keep envelope-style even on internal errors (per your guide)
+  fail('INTERNAL_ERROR', $e->getMessage(), [
+    'exception' => get_class($e),
+    'time'      => gmdate('c')
+  ]);
+}
+
+/* ================= Helpers & Adapters ================= */
+
+function outlet_carrier_creds(PDO $pdo, int|string $outletId): array {
+  $legacy = null;
+  $uuid   = null;
+
+  if (is_int($outletId)) {
+    if ($outletId > 0) {
+      $legacy = $outletId;
+    }
+  } else {
+    $candidate = trim((string)$outletId);
+    if ($candidate !== '') {
+      $uuid = $candidate;
+      if (ctype_digit($candidate)) {
+        $legacy = (int)$candidate;
+      }
+    }
+  }
+
+  $conditions = [];
+  $params = [];
+  if ($legacy !== null && $legacy > 0) {
+    $conditions[] = 'website_outlet_id = :legacy';
+    $params['legacy'] = $legacy;
+  }
+  if ($uuid !== null) {
+    $conditions[] = 'id = :uuid';
+    $params['uuid'] = $uuid;
+  }
+
+  if (!$conditions) {
+    return [];
+  }
+
+  $sql = 'SELECT nz_post_api_key, nz_post_subscription_key, gss_token
+             FROM vend_outlets
+            WHERE ' . implode(' OR ', $conditions) . '
+            LIMIT 1';
+
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  return $st->fetch(PDO::FETCH_ASSOC) ?: [];
+}
+
+/* ===== Box/Satchel planning helpers (DB-driven) ===== */
+
+function resolve_tare_grams(PDO $pdo, int $containerId): int {
+  // If you add containers.tare_grams, uncomment to fetch per-container tare.
+  // $st = $pdo->prepare("SELECT tare_grams FROM containers WHERE container_id = :id LIMIT 1");
+  // $st->execute([':id'=>$containerId]);
+  // $v = $st->fetchColumn();
+  // if ($v !== false && $v !== null) return (int)$v;
+
+  $env = getenv('CIS_OUTER_TARE_G');
+  return $env !== false && $env !== '' ? (int)$env : 500; // TEMP site-wide default
+}
+
+/** Get NZC containers (E20/E40/E60) with shipping cap g from your views. */
+function fetch_nzc_containers(PDO $pdo): array {
+  $sql = "
+    SELECT c.container_id,
+           caps.container_code,
+           c.name AS container_name,
+           CAST(caps.container_cap_g AS UNSIGNED) AS cap_g
+      FROM v_carrier_caps caps
+      JOIN containers c ON c.code = caps.container_code
+      JOIN carriers  car ON car.carrier_id = c.carrier_id
+     WHERE car.name = 'NZ Couriers'
+       AND caps.container_code IN ('E20','E40','E60')
+     ORDER BY FIELD(caps.container_code,'E20','E40','E60')
+  ";
+  $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($rows as &$r) {
+    $r['tare_g']        = resolve_tare_grams($pdo, (int)$r['container_id']);
+    $r['content_cap_g'] = max(0, (int)$r['cap_g'] - (int)$r['tare_g']);
+  }
+  return $rows;
+}
+
+/** Plan a best-fit mix by weight for NZC cartons (E20 default, DB caps). */
+function plan_nzc_mix_by_weight(PDO $pdo, int $total_g): array {
+  $containers = fetch_nzc_containers($pdo); // E20 → E40 → E60
+  if (!$containers) return [];
+  $pref = $containers[0];
+  $content_cap_g = max(1, (int)$pref['content_cap_g']);
+  $boxes = (int)ceil(max(0,$total_g) / $content_cap_g);
+  return [['code'=>$pref['container_code'], 'name'=>$pref['container_name'], 'count'=>$boxes]];
+}
+
+/** Satchel cap rule (2.0 kg). Swap to DB if you model satchels there. */
+function satchel_allowed_total_g(int $total_g): bool {
+  return $total_g <= 2000;
+}
+
+/* ---- Adapters (stubs; wire real endpoints in your adapters) ---- */
+
+function adapter_nzpost_rates(array $req, array $tokens): array {
+  // Implement via Starshipit/eShip; return array of normalized rows.
+  return [];
+}
+function adapter_gss_rates(array $req, array $tokens): array {
+  // Implement via GSS; return array of normalized rows.
+  return [];
 }

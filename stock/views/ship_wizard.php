@@ -11,6 +11,30 @@ foreach (['transfer','transfer_id','id','t'] as $k) {
   if (isset($_GET[$k]) && (int)$_GET[$k] > 0) { $tid = (int)$_GET[$k]; break; }
 }
 ?>
+<section id="packOnlyPanel" class="card d-none" aria-hidden="true">
+  <div class="card-body">
+    <h5 class="card-title mb-2">
+      Pack &amp; Send
+      <small class="d-block text-muted">Manual fulfilment (no label printing)</small>
+    </h5>
+    <div class="form-group">
+      <label for="packModeSelect"><strong>Fulfilment mode</strong></label>
+      <select id="packModeSelect" class="form-control">
+        <option value="">Loading modes…</option>
+      </select>
+      <small class="form-text text-muted">Choose how this transfer will move through the network.</small>
+    </div>
+    <div class="custom-control custom-switch mb-3">
+      <input type="checkbox" class="custom-control-input" id="packSendNowToggle" checked>
+      <label class="custom-control-label" for="packSendNowToggle">Mark as dispatched immediately</label>
+    </div>
+    <button type="button" class="btn btn-primary btn-lg" id="packOnlyBtn">
+      <i class="fa fa-check mr-1" aria-hidden="true"></i>
+      <span class="btn-label">Mark as Packed &amp; Send</span>
+    </button>
+    <div id="packOnlyStatus" class="small text-muted mt-3" aria-live="polite"></div>
+  </div>
+</section>
 <section id="ship-wizard" class="sw card" data-transfer="<?= (int)$tid ?>">
   <header class="sw__head">
     <div class="sw__brand">

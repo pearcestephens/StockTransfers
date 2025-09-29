@@ -46,8 +46,10 @@ final class TransfersService
                     t.status,
                     t.state,
                     t.created_at,
-                    vo_from.name AS outlet_from_name,
-                    vo_to.name   AS outlet_to_name
+                    vo_from.website_outlet_id AS outlet_from_legacy_id,
+                    vo_from.name              AS outlet_from_name,
+                    vo_to.website_outlet_id   AS outlet_to_legacy_id,
+                    vo_to.name                AS outlet_to_name
                FROM transfers t
           LEFT JOIN vend_outlets vo_from ON vo_from.id = t.outlet_from
           LEFT JOIN vend_outlets vo_to   ON vo_to.id   = t.outlet_to
@@ -57,6 +59,50 @@ final class TransfersService
         $tx->execute(['id' => $id]);
         $transfer = $tx->fetch(PDO::FETCH_ASSOC);
         if (!$transfer) return null;
+
+        $fromUuid = trim((string)($transfer['outlet_from'] ?? ''));
+        $toUuid   = trim((string)($transfer['outlet_to']   ?? ''));
+
+        $transfer['outlet_from_uuid'] = $fromUuid;
+        $transfer['outlet_to_uuid']   = $toUuid;
+
+        $fromLegacy = (int)($transfer['outlet_from_legacy_id'] ?? 0);
+        $toLegacy   = (int)($transfer['outlet_to_legacy_id']   ?? 0);
+
+        $transfer['outlet_from'] = $fromLegacy;
+        $transfer['outlet_to']   = $toLegacy;
+
+        $fromMeta = $fromUuid !== '' ? $this->getOutletMeta($fromUuid) : null;
+        if ($fromMeta) {
+            $transfer['outlet_from_meta'] = $fromMeta;
+            if (empty($transfer['outlet_from_name'])) {
+                $transfer['outlet_from_name'] = $fromMeta['name'] ?? '';
+            }
+            if ($fromLegacy === 0 && !empty($fromMeta['website_outlet_id'])) {
+                $transfer['outlet_from'] = (int)$fromMeta['website_outlet_id'];
+            }
+        }
+
+        $toMeta = $toUuid !== '' ? $this->getOutletMeta($toUuid) : null;
+        if ($toMeta) {
+            $transfer['outlet_to_meta'] = $toMeta;
+            if (empty($transfer['outlet_to_name'])) {
+                $transfer['outlet_to_name'] = $toMeta['name'] ?? '';
+            }
+            if ($toLegacy === 0 && !empty($toMeta['website_outlet_id'])) {
+                $transfer['outlet_to'] = (int)$toMeta['website_outlet_id'];
+            }
+        }
+
+        if (empty($transfer['outlet_from_name']) && $fromUuid !== '') {
+            $transfer['outlet_from_name'] = $fromUuid;
+        }
+
+        if (empty($transfer['outlet_to_name']) && $toUuid !== '') {
+            $transfer['outlet_to_name'] = $toUuid;
+        }
+
+        unset($transfer['outlet_from_legacy_id'], $transfer['outlet_to_legacy_id']);
 
         $it = $this->db->prepare(
             'SELECT ti.id,
@@ -72,12 +118,177 @@ final class TransfersService
                FROM transfer_items ti
           LEFT JOIN vend_products vp ON vp.id = ti.product_id
               WHERE ti.transfer_id = :tid
-              ORDER BY ti.id ASC'
+              ORDER BY vp.name ASC, vp.variant_name ASC, ti.id ASC'
         );
         $it->execute(['tid' => $id]);
         $transfer['items'] = $it->fetchAll(PDO::FETCH_ASSOC);
 
         return $transfer;
+    }
+
+    /**
+     * Return quantity on hand for product IDs at a specific outlet.
+     * @param array<int,int> $productIds
+     * @return array<int,int> product_id => qty
+     */
+    public function getSourceStockLevels(array $productIds, int $outletId): array
+    {
+        $ids = array_values(array_unique(array_map(static fn($id) => (int)$id, $productIds)));
+        if (!$ids || $outletId <= 0) {
+            return [];
+        }
+
+        static $inventoryMeta = null;
+        if ($inventoryMeta === null) {
+            $inventoryMeta = ['ready' => false, 'column' => null];
+            try {
+                $cols = $this->db->query('SHOW COLUMNS FROM vend_inventory')->fetchAll(PDO::FETCH_ASSOC);
+                $colNames = [];
+                foreach ($cols as $colRow) {
+                    $colNames[strtolower((string)($colRow['Field'] ?? ''))] = (string)($colRow['Field'] ?? '');
+                }
+                foreach (['inventory_level','quantity','qty','stock_qty','on_hand','onhand','level'] as $candidate) {
+                    if (isset($colNames[$candidate])) {
+                        $inventoryMeta['column'] = $colNames[$candidate];
+                        $inventoryMeta['ready'] = true;
+                        break;
+                    }
+                }
+            } catch (Throwable $e) {
+                $inventoryMeta['ready'] = false;
+            }
+        }
+
+        if (!$inventoryMeta['ready'] || empty($inventoryMeta['column'])) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = sprintf(
+            'SELECT product_id, SUM(`%s`) AS qty
+               FROM vend_inventory
+              WHERE outlet_id = ? AND product_id IN (%s)
+              GROUP BY product_id',
+            $inventoryMeta['column'],
+            $placeholders
+        );
+
+        $stmt = $this->db->prepare($sql);
+        $bindIndex = 1;
+        $stmt->bindValue($bindIndex++, $outletId, PDO::PARAM_INT);
+        foreach ($ids as $pid) {
+            $stmt->bindValue($bindIndex++, $pid, PDO::PARAM_INT);
+        }
+
+        try {
+            $stmt->execute();
+        } catch (Throwable $e) {
+            error_log('TransfersService::getSourceStockLevels error: ' . $e->getMessage());
+            return [];
+        }
+
+        $map = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $pid = (int)($row['product_id'] ?? 0);
+            $qty = isset($row['qty']) ? (float)$row['qty'] : 0.0;
+            $map[$pid] = (int)round($qty);
+        }
+        return $map;
+    }
+
+    public function getOutletMeta(int|string $outletIdentifier): ?array
+    {
+        $uuid = null;
+        $legacyId = null;
+
+        if (is_int($outletIdentifier)) {
+            if ($outletIdentifier <= 0) {
+                return null;
+            }
+            $legacyId = $outletIdentifier;
+        } else {
+            $candidate = trim((string)$outletIdentifier);
+            if ($candidate === '') {
+                return null;
+            }
+            $uuid = $candidate;
+            if (ctype_digit($candidate)) {
+                $legacyId = (int)$candidate;
+            }
+        }
+
+        $conditions = [];
+        $params     = [];
+        if ($uuid !== null) {
+            $conditions[] = 'id = :uuid';
+            $params['uuid'] = $uuid;
+        }
+        if ($legacyId !== null && $legacyId > 0) {
+            $conditions[] = 'website_outlet_id = :legacy';
+            $params['legacy'] = $legacyId;
+        }
+
+        if (!$conditions) {
+            return null;
+        }
+
+        $sql = sprintf(
+            'SELECT id,
+                    website_outlet_id,
+                    name,
+                    store_code,
+                    physical_address_1       AS address1,
+                    physical_address_2       AS address2,
+                    physical_suburb          AS suburb,
+                    physical_city            AS city,
+                    physical_state           AS region,
+                    physical_postcode        AS postcode,
+                    physical_country_id      AS country_code,
+                    physical_phone_number    AS phone,
+                    email,
+                    nz_post_api_key,
+                    nz_post_subscription_key,
+                    gss_token,
+                    0 AS printers_online,
+                    0 AS printers_total
+               FROM vend_outlets
+              WHERE %s
+              LIMIT 1',
+            implode(' OR ', $conditions)
+        );
+
+        $st = $this->db->prepare($sql);
+        $st->execute($params);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $row['id'] = (string)($row['id'] ?? '');
+        $row['website_outlet_id'] = isset($row['website_outlet_id']) ? (int)$row['website_outlet_id'] : 0;
+        $row['company'] = 'The Vape Shed';
+
+        $countryCode = strtoupper(trim((string)($row['country_code'] ?? '')));
+        unset($row['country_code']);
+        $row['country'] = match ($countryCode) {
+            'NZ', 'NZL', '' => 'New Zealand',
+            default          => $countryCode,
+        };
+
+        foreach (['address1', 'address2', 'suburb', 'city', 'region', 'postcode', 'phone', 'email', 'nz_post_api_key', 'nz_post_subscription_key', 'gss_token'] as $field) {
+            if (array_key_exists($field, $row)) {
+                $row[$field] = trim((string)$row[$field]);
+            }
+        }
+
+        $row['printers_online'] = (int)($row['printers_online'] ?? 0);
+        $row['printers_total']  = (int)($row['printers_total'] ?? 0);
+
+    $row['nz_post_enabled'] = ($row['nz_post_api_key'] !== '' || $row['nz_post_subscription_key'] !== '');
+        $row['nzc_enabled']     = ($row['gss_token'] !== '');
+
+        return $row;
     }
 
     /**

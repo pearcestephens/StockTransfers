@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": "INVALID_ADDRESS",
-    "message": "Destination postcode is invalid for selected service.",
-    "details": {"field": "postcode", "value": "0000"}
-  }
-}

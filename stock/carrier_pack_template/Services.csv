@@ -1,2 +1,0 @@
-Carrier,Service Code,Service Name,Description,Domestic/International,Signature Available,Saturday Delivery,Rural Handling,Authority To Leave (ATL),Insurance Available,Max Weight (kg),Max Length (cm),Max Girth (cm),Label Formats (PDF/ZPL/EPL),DPI (203/300),Tracking Events Provided,Cutoff Time (Local, HH:MM),SLA (Business Days),Notes
-,,,,Domestic,Y/N,Y/N,Y/N,Y/N,Y/N,,,,PDF A6; ZPL,203,Y/N,,,

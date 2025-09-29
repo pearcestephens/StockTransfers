@@ -1,92 +1,158 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../../assets/functions/config.php';
+/**
+ * CIS — Weight Suggest (DB-driven, view-based; no constants)
+ * Input JSON:
+ * {
+ *   "meta": { "transfer_id":12345, "from_outlet_id":1, "to_outlet_id":7 },
+ *   "carrier": "nzc"|"nzpost",
+ *   "container": "box"|"satchel",
+ *   "total_kg": 12.8,                       // total content weight
+ *   "prefer": { "nzc": ["E20","E40","E60"] } // optional precedence from UI; DB is the source of truth
+ * }
+ *
+ * Output JSON (success):
+ * {
+ *   "ok": true,
+ *   "plan": {
+ *     "carrier": "nzc",
+ *     "total_g": 12800,
+ *     "boxes": [ {"code":"E20","name":"E20 Carton","count":1,"cap_g":25000,"tare_g":500,"content_cap_g":24500} ],
+ *     "satchel": null
+ *   },
+ *   "notes": []
+ * }
+ *
+ * If satchel overweight:
+ * { "ok": true, "plan": { "error": "SATCHEL_OVERWEIGHT", "total_g": 3200, "max_g": 2000 } }
+ */
 
-header('Content-Type:application/json;charset=utf-8');
+require __DIR__.'/_lib/validate.php';
+cors_and_headers([
+  'allow_methods' => 'POST, OPTIONS',
+  'allow_headers' => 'Content-Type, X-API-Key',
+  'max_age'       => 600
+]);
 
-function ok(array $d): never {
-  http_response_code(200);
-  echo json_encode(['success'=>true]+$d, JSON_UNESCAPED_SLASHES);
-  exit;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { http_response_code(204); exit; }
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST')     { fail('METHOD_NOT_ALLOWED','POST only',405); }
+
+$in = json_input();
+$carrier   = strtolower((string)($in['carrier'] ?? 'nzc'));
+$container = strtolower((string)($in['container'] ?? 'box'));
+$totalKg   = (float)($in['total_kg'] ?? 0);
+if ($totalKg <= 0) { fail('MISSING_PARAM','total_kg required (>0)'); }
+$total_g = (int)round($totalKg * 1000);
+
+$pdo = pdo();
+
+/* --- helpers --- */
+function env_tare_g(): int {
+  $env = getenv('CIS_OUTER_TARE_G');
+  return ($env !== false && $env !== '') ? (int)$env : 500; // fallback 500 g until containers.tare_grams exists
 }
-function bad(int $c,string $m,array $e=[]): never {
-  http_response_code($c);
-  echo json_encode(['success'=>false,'error'=>$m]+$e, JSON_UNESCAPED_SLASHES);
-  exit;
+
+/** Pull caps & container identity from views for the given carrier and an allowlist of codes (for NZC: E20,E40,E60). */
+function fetch_carrier_caps(PDO $pdo, string $carrierName, array $codesAllowlist = []): array {
+  $sql = "
+    SELECT c.container_id,
+           caps.container_code,
+           c.name AS container_name,
+           CAST(caps.container_cap_g AS UNSIGNED) AS cap_g
+      FROM v_carrier_caps caps
+      JOIN containers c ON c.code = caps.container_code
+      JOIN carriers  car ON car.carrier_id = c.carrier_id
+     WHERE car.name = :carrier
+       AND caps.container_cap_g IS NOT NULL
+  ";
+  if ($codesAllowlist) {
+    $in = implode(",", array_map(fn($x)=>$pdo->quote($x), $codesAllowlist));
+    $sql .= " AND caps.container_code IN ($in)";
+  }
+  $sql .= " ORDER BY caps.container_code";
+  $rows = $pdo->prepare($sql);
+  $rows->execute([':carrier'=>$carrierName]);
+  $out = $rows->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($out as &$r) {
+    // Use a column if you add it later; for now env fallback:
+    $r['tare_g'] = env_tare_g();
+    $r['content_cap_g'] = max(0, (int)$r['cap_g'] - (int)$r['tare_g']);
+  }
+  return $out;
 }
 
-try {
-  $tid=(int)($_GET['transfer']??$_GET['t']??0);
-  if($tid<=0) bad(400,'transfer is required');
+/** Satchel cap rule (if you later model bags in DB, substitute here). */
+function satchel_allowed_g(int $total_g): int {
+  return 2000; // 2.0 kg
+}
 
-  $fallbackCap=is_numeric($_GET['default_cap_kg']??null)?max(1,(float)$_GET['default_cap_kg']):18.0;
+/* --- planning logic --- */
+$notes = [];
 
-  $pdo=cis_pdo();
-  if(!$pdo instanceof PDO) bad(500,'db unavailable');
-
-  $q=$pdo->prepare("
-    SELECT
-      COUNT(*) AS items_count,
-      ROUND(SUM(COALESCE(vp.avg_weight_grams,cw.avg_weight_grams,100)*GREATEST(COALESCE(NULLIF(ti.qty_sent_total,0),ti.qty_requested,0),0))/1000,3) AS total_kg,
-      SUM(CASE WHEN COALESCE(vp.avg_weight_grams,cw.avg_weight_grams)<=0 OR COALESCE(vp.avg_weight_grams,cw.avg_weight_grams) IS NULL THEN 1 ELSE 0 END) AS missing_weights
-    FROM transfer_items ti
-    LEFT JOIN vend_products vp ON vp.id=ti.product_id
-    LEFT JOIN product_classification_unified pcu ON pcu.product_id=ti.product_id
-    LEFT JOIN category_weights cw ON cw.category_id=pcu.category_id
-    WHERE ti.transfer_id=:tid
-  ");
-  $q->execute([':tid'=>$tid]);
-  $w=$q->fetch(PDO::FETCH_ASSOC)?:['items_count'=>0,'total_kg'=>0,'missing_weights'=>0];
-
-  $itemsCount=(int)$w['items_count'];
-  $totalKg=max(0.0,(float)$w['total_kg']);
-  $missingWeights=(int)$w['missing_weights'];
-
-  $warnings=[];
-  $capKg=$fallbackCap;
-
-  try {
-    $cap=$pdo->query("SELECT MAX(max_weight_grams) FROM containers WHERE max_weight_grams IS NOT NULL")->fetchColumn();
-    if($cap && (float)$cap>0) $capKg=(float)$cap/1000.0;
-  } catch(\Throwable $e) {}
-
-  $boxes=[];
-  $remaining=$totalKg;
-  $loop=0;
-  while($remaining>0.0001){
-    $load=min($capKg,$remaining);
-    $boxes[]=round($load,3);
-    $remaining=round($remaining-$load,3);
-    $loop++;
-    if($loop>200){
-      $warnings[]='Excessive box count abort';
-      $boxes=[]; break;
-    }
+/* Satchel: validate only total kg (no dims) */
+if ($container === 'satchel') {
+  $max_g = satchel_allowed_g($total_g);
+  if ($total_g > $max_g) {
+    ok(['plan' => ['error'=>'SATCHEL_OVERWEIGHT', 'total_g'=>$total_g, 'max_g'=>$max_g], 'notes'=>$notes]);
   }
+  ok(['plan' => ['carrier'=>$carrier, 'total_g'=>$total_g, 'satchel' => ['total_g'=>$total_g], 'boxes'=>null], 'notes'=>$notes]);
+}
 
-  if($totalKg<=0) $boxes=[];
+/* Boxes: plan by DB caps */
+if ($carrier === 'nzc') {
+  // NZ Couriers carton preference: let DB be the source of truth; order E20→E40→E60 if present
+  $prefer = $in['prefer']['nzc'] ?? ['E20','E40','E60'];
+  $caps = fetch_carrier_caps($pdo, 'NZ Couriers', $prefer);
 
-  $packages=[];
-  foreach($boxes as $i=>$kg){
-    $packages[]=[
-      'name'=>'Box '.($i+1),
-      'l_cm'=>40,'w_cm'=>30,'h_cm'=>20,
-      'weight_kg'=>max(0.001,$kg),
-      'qty'=>1,
-      'ref'=>'T'.$tid.'-'.($i+1),
-    ];
+  // Hard guard
+  if (!$caps) {
+    fail('CONFIG','No NZ Couriers containers found in views (v_carrier_caps/containers).');
   }
+  // reorder $caps by prefer list
+  usort($caps, function($a,$b) use ($prefer){
+    $ai = array_search($a['container_code'], $prefer, true);
+    $bi = array_search($b['container_code'], $prefer, true);
+    $ai = $ai === false ? 999 : $ai;
+    $bi = $bi === false ? 999 : $bi;
+    return $ai <=> $bi;
+  });
+
+  $remain = $total_g;
+  $planBoxes = [];
+
+  // Greedy by preferred carton: fill with the top option (typically E20)
+  $first = $caps[0];
+  $contentCap = max(1, (int)$first['content_cap_g']); // avoid /0
+  $count = (int)ceil($remain / $contentCap);
+  $planBoxes[] = [
+    'code'          => (string)$first['container_code'],
+    'name'          => (string)$first['container_name'],
+    'count'         => $count,
+    'cap_g'         => (int)$first['cap_g'],
+    'tare_g'        => (int)$first['tare_g'],
+    'content_cap_g' => (int)$first['content_cap_g']
+  ];
+  $remain = 0;
 
   ok([
-    'transfer_id'=>$tid,
-    'items_count'=>$itemsCount,
-    'total_weight_kg'=>round($totalKg,3),
-    'missing_weights'=>$missingWeights,
-    'plan'=>['cap_kg'=>$capKg,'boxes'=>count($boxes),'per_box_kg'=>$boxes],
-    'packages'=>$packages,
-    'warnings'=>$warnings,
+    'plan' => [
+      'carrier' => 'nzc',
+      'total_g' => $total_g,
+      'boxes'   => $planBoxes,
+      'satchel' => null
+    ],
+    'notes' => $notes
   ]);
-} catch(\Throwable $e) {
-  bad(500,'weight_suggest failed',['exception'=>get_class($e)]);
 }
+
+/* Default for other carriers (e.g., NZ Post): if you later store boxes, reuse the same pattern above */
+ok([
+  'plan' => [
+    'carrier' => $carrier,
+    'total_g' => $total_g,
+    'boxes'   => null,   // no box catalog used for this carrier in this version
+    'satchel' => null
+  ],
+  'notes' => $notes
+]);

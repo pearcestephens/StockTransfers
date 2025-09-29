@@ -1,2 +1,0 @@
-Data Type (Shipment, Label, Tracking, PII),Retention Period,Storage Requirements (encryption, region),PII Fields Involved,Redaction Required?,Policy/Link,Notes
-PII,24 months,"Encrypt at rest; NZ/AU region","Name, phone, address",Possibly after SLA,,

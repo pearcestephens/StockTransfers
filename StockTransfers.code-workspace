@@ -1,0 +1,23 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.watcherExclude": {
+      "**/.git/**": true,
+      "**/vendor/**": true,
+      "**/node_modules/**": true,
+      "**/logs/**": true,
+      "**/tmp/**": true
+    },
+    "search.exclude": {
+      "../*": true,
+      "**/vendor/**": true,
+      "**/node_modules/**": true,
+      "**/logs/**": true,
+      "**/tmp/**": true
+    }
+  }
+}

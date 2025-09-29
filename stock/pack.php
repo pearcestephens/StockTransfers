@@ -1,4 +1,5 @@
 <?php
+
 /**
  * CIS — Transfers » Stock » Pack
  *
@@ -70,8 +71,11 @@ require_once $DOCUMENT_ROOT . '/assets/functions/ApiResponder.php';
 require_once $DOCUMENT_ROOT . '/assets/functions/HttpGuard.php';
 require_once $DOCUMENT_ROOT . '/modules/transfers/stock/lib/AccessPolicy.php';
 
-use Modules\Transfers\Stock\Services\TransfersService;
 use Modules\Transfers\Stock\Lib\AccessPolicy;
+use Modules\Transfers\Stock\Services\FreightCalculator;
+use Modules\Transfers\Stock\Services\NotesService;
+use Modules\Transfers\Stock\Services\StaffNameResolver;
+use Modules\Transfers\Stock\Services\TransfersService;
 
 // Session & login
 if (empty($_SESSION['userID'])) {
@@ -111,13 +115,17 @@ if (!$transfer || !is_array($transfer)) {
   exit;
 }
 
+$isPackaged = strtoupper((string)($transfer['state'] ?? '')) === 'PACKAGED';
+$showCourierDetail = false; // Temporary: keep courier UI minimal (buttons only)
+
 // --------------------------------------------------------------------------------------
 // Safe Rendering Helpers
 // --------------------------------------------------------------------------------------
 /**
  * Clean arbitrary mixed->string without HTML; flatten JSON-ish text if detected.
  */
-function tfx_clean_text(mixed $value): string {
+function tfx_clean_text(mixed $value): string
+{
   $text = trim((string)$value);
   if ($text === '') return '';
   $first = $text[0] ?? '';
@@ -137,7 +145,8 @@ function tfx_clean_text(mixed $value): string {
 }
 
 /** Return first non-empty (after clean) candidate. */
-function tfx_first(array $candidates): string {
+function tfx_first(array $candidates): string
+{
   foreach ($candidates as $c) {
     $t = tfx_clean_text($c);
     if ($t !== '') return $t;
@@ -146,7 +155,8 @@ function tfx_first(array $candidates): string {
 }
 
 /** Render product cell HTML (escaped). */
-function tfx_render_product_cell(array $item): string {
+function tfx_render_product_cell(array $item): string
+{
   $name    = tfx_first([$item['product_name'] ?? null, $item['name'] ?? null, $item['title'] ?? null]);
   $variant = tfx_first([$item['product_variant'] ?? null, $item['variant_name'] ?? null, $item['variant'] ?? null]);
   $sku     = tfx_clean_text($item['product_sku'] ?? $item['sku'] ?? $item['variant_sku'] ?? '');
@@ -160,17 +170,360 @@ function tfx_render_product_cell(array $item): string {
   return '<div class="tfx-product-cell"><strong class="tfx-product-name">' . $primary . '</strong>' . $skuLine . '</div>';
 }
 
+function tfx_outlet_line(array $outlet): string
+{
+  $parts = array_filter([
+    $outlet['name']   ?? null,
+    $outlet['city']   ?? null,
+    $outlet['postcode'] ?? null,
+    $outlet['country']  ?? 'New Zealand',
+    $outlet['phone']    ?? null,
+    $outlet['email']    ?? null,
+  ], static function ($value): bool {
+    return $value !== null && trim((string)$value) !== '';
+  });
+
+  return $parts ? implode(' | ', array_map(static fn($v) => trim((string)$v), $parts)) : '';
+}
+
+/**
+ * Build an automatic package plan for the Dispatch console based on the aggregate transfer weight.
+ *
+ * @param int               $totalWeightGrams Approximate total consignment weight in grams (goods only).
+ * @param int               $totalItems       Total item count being shipped.
+ * @param FreightCalculator $freight          Freight calculator instance for capacity helpers.
+ *
+ * @return array<string,mixed>|null Structure describing the preferred container type and package breakdown.
+ */
+function tfx_build_dispatch_autoplan(int $totalWeightGrams, int $totalItems, FreightCalculator $freight): ?array
+{
+  $totalWeightGrams = max(0, $totalWeightGrams);
+  $totalItems       = max(0, $totalItems);
+
+  if ($totalWeightGrams === 0 && $totalItems === 0) {
+    return null;
+  }
+
+  $totalWeightKg = $totalWeightGrams / 1000;
+
+  // Heuristic: satchels for lighter consignments, boxes otherwise (provide extra headroom below 15 kg cap).
+  $preferSatchel = $totalWeightKg <= 12.0 && $totalItems <= 20;
+  $container     = $preferSatchel ? 'satchel' : 'box';
+  $capKg         = $container === 'satchel' ? 15.0 : 25.0;
+  $tareReserveKg = $container === 'satchel' ? 0.25 : 2.5;
+  $goodsCapKg    = max(1.0, $capKg - $tareReserveKg);
+  $capGrams      = (int)round($goodsCapKg * 1000);
+
+  $splitWeights = $freight->planParcelsByCap($totalWeightGrams > 0 ? $totalWeightGrams : 1, $capGrams);
+  if (!$splitWeights) {
+    $splitWeights = [$totalWeightGrams > 0 ? $totalWeightGrams : 1000];
+  }
+
+  $packageCount   = count($splitWeights);
+  $baseItemsPer   = $packageCount > 0 ? intdiv($totalItems, $packageCount) : 0;
+  $itemsRemainder = $packageCount > 0 ? $totalItems - ($baseItemsPer * $packageCount) : 0;
+
+  $presetMeta = [
+    'nzp_s' => ['w' => 22, 'l' => 31, 'h' => 4],
+    'nzp_m' => ['w' => 28, 'l' => 39, 'h' => 4],
+    'nzp_l' => ['w' => 33, 'l' => 42, 'h' => 4],
+    'vs_m'  => ['w' => 30, 'l' => 40, 'h' => 20],
+    'vs_l'  => ['w' => 35, 'l' => 45, 'h' => 25],
+    'vs_xl' => ['w' => 40, 'l' => 50, 'h' => 30],
+  ];
+
+  $packages = [];
+  foreach ($splitWeights as $index => $grams) {
+    $goodsWeightKg = round(max(0, $grams) / 1000, 3);
+    $presetId      = tfx_pick_autoplan_preset($container, $goodsWeightKg);
+    $tareKg        = tfx_autoplan_tare($presetId);
+    $shipWeightKg  = round($goodsWeightKg + $tareKg, 3);
+    $itemsForBox   = $baseItemsPer + ($index < $itemsRemainder ? 1 : 0);
+
+    $dims = $presetMeta[$presetId] ?? ($container === 'box'
+      ? ['w' => 30, 'l' => 40, 'h' => 20]
+      : ['w' => 28, 'l' => 39, 'h' => 4]);
+
+    $packages[] = [
+      'sequence'        => $index + 1,
+      'preset_id'       => $presetId,
+      'goods_weight_kg' => $goodsWeightKg,
+      'ship_weight_kg'  => $shipWeightKg,
+      'items'           => $itemsForBox,
+      'dimensions'      => $dims,
+    ];
+  }
+
+  return [
+    'source'             => 'auto',
+    'shouldHydrate'      => true,
+    'container'          => $container,
+    'cap_kg'             => $capKg,
+    'goods_cap_kg'       => $goodsCapKg,
+    'package_count'      => $packageCount,
+    'total_weight_kg'    => round($totalWeightKg, 3),
+    'total_weight_grams' => $totalWeightGrams,
+    'total_items'        => $totalItems,
+    'packages'           => $packages,
+  ];
+}
+
+/**
+ * Pick a default preset identifier for the calculated parcel weight.
+ */
+function tfx_pick_autoplan_preset(string $container, float $weightKg): string
+{
+  $weightKg = max(0, $weightKg);
+  if ($container === 'box') {
+    if ($weightKg > 20.0) return 'vs_xl';
+    if ($weightKg > 14.0) return 'vs_l';
+    return 'vs_m';
+  }
+
+  if ($weightKg > 9.0) return 'nzp_l';
+  if ($weightKg > 5.0) return 'nzp_m';
+  return 'nzp_s';
+}
+
+/**
+ * Known tare weights for courier packaging presets (kg).
+ */
+function tfx_autoplan_tare(string $presetId): float
+{
+  return match ($presetId) {
+    'nzp_s' => 0.15,
+    'nzp_m' => 0.20,
+    'nzp_l' => 0.25,
+    'vs_m'  => 2.0,
+    'vs_l'  => 2.5,
+    'vs_xl' => 3.1,
+    default => 0.0,
+  };
+}
+
 // --------------------------------------------------------------------------------------
 // Derived Transfer Fields (escaped)
 // --------------------------------------------------------------------------------------
-$txId    = (int)($transfer['id'] ?? $transferId);
-$items   = is_array($transfer['items'] ?? null) ? $transfer['items'] : [];
+$txId        = (int)($transfer['id'] ?? $transferId);
+$items       = is_array($transfer['items'] ?? null) ? $transfer['items'] : [];
+$fromVendId  = (string)($transfer['outlet_from_uuid'] ?? $transfer['outlet_from_meta']['id'] ?? $transfer['outlet_from'] ?? '');
+$toVendId    = (string)($transfer['outlet_to_uuid']   ?? $transfer['outlet_to_meta']['id']   ?? $transfer['outlet_to']   ?? '');
 
-$fromRaw = (string)($transfer['outlet_from_name'] ?? $transfer['outlet_from'] ?? '');
-$toRaw   = (string)($transfer['outlet_to_name']   ?? $transfer['outlet_to']   ?? '');
+$fromOutletMeta = $transfer['outlet_from_meta'] ?? $svc->getOutletMeta($fromVendId) ?? [];
+$toOutletMeta   = $transfer['outlet_to_meta']   ?? $svc->getOutletMeta($toVendId)   ?? [];
 
-$fromLbl = htmlspecialchars($fromRaw !== '' ? $fromRaw : (string)($transfer['outlet_from'] ?? ''), ENT_QUOTES, 'UTF-8');
-$toLbl   = htmlspecialchars($toRaw   !== '' ? $toRaw   : (string)($transfer['outlet_to']   ?? ''), ENT_QUOTES, 'UTF-8');
+$fromOutletId = (int)($transfer['outlet_from'] ?? ($fromOutletMeta['website_outlet_id'] ?? 0));
+$toOutletId   = (int)($transfer['outlet_to']   ?? ($toOutletMeta['website_outlet_id']   ?? 0));
+$sourceStockMap = [];
+if ($items && $fromOutletId > 0) {
+  $productIds = [];
+  foreach ($items as $itemRow) {
+    $pid = (int)($itemRow['product_id'] ?? 0);
+    if ($pid > 0) {
+      $productIds[] = $pid;
+    }
+  }
+  if ($productIds) {
+    $sourceStockMap = $svc->getSourceStockLevels($productIds, $fromOutletId);
+  }
+}
+
+$fromRaw = tfx_first([
+  $transfer['outlet_from_name'] ?? null,
+  $fromOutletMeta['name'] ?? null,
+  $fromOutletMeta['store_code'] ?? null,
+  $fromVendId,
+]);
+$toRaw = tfx_first([
+  $transfer['outlet_to_name'] ?? null,
+  $toOutletMeta['name'] ?? null,
+  $toOutletMeta['store_code'] ?? null,
+  $toVendId,
+]);
+
+$fromName = tfx_first([
+  $fromOutletMeta['name'] ?? null,
+  $fromRaw,
+]);
+$toName = tfx_first([
+  $toOutletMeta['name'] ?? null,
+  $toRaw,
+]);
+
+$fromLbl = htmlspecialchars($fromName !== '' ? $fromName : ($fromVendId !== '' ? $fromVendId : (string)$fromOutletId), ENT_QUOTES, 'UTF-8');
+$toLbl   = htmlspecialchars($toName   !== '' ? $toName   : ($toVendId   !== '' ? $toVendId   : (string)$toOutletId), ENT_QUOTES, 'UTF-8');
+
+$fromLine = tfx_outlet_line($fromOutletMeta);
+if ($fromLine === '') {
+  $fromLine = sprintf('%s | %s', $fromName, $fromOutletMeta['city'] ?? '');
+}
+$fromLine = trim($fromLine);
+
+$toLine = tfx_outlet_line($toOutletMeta);
+if ($toLine === '') {
+  $toLine = sprintf('%s | %s', $toName, $toOutletMeta['city'] ?? '');
+}
+$toLine = trim($toLine);
+
+$dispatchFromOutlet = $fromName !== ''
+  ? $fromName
+  : ($fromOutletMeta['store_code'] ?? ($fromVendId !== '' ? substr($fromVendId, 0, 8) : sprintf('Outlet #%d', $fromOutletId ?: 0)));
+$dispatchToOutlet   = $toName !== ''
+  ? $toName
+  : ($toOutletMeta['store_code'] ?? ($toVendId !== '' ? substr($toVendId, 0, 8) : sprintf('Outlet #%d', $toOutletId ?: 0)));
+
+$printersOnline = (int)($fromOutletMeta['printers_online'] ?? 0);
+$printersTotal  = (int)($fromOutletMeta['printers_total']  ?? 0);
+$printPoolOnline = $printersTotal <= 0 ? true : ($printersOnline > 0);
+$printPoolMetaText = $printersTotal > 0
+  ? sprintf('%d of %d printers ready', max(0, $printersOnline), max(0, $printersTotal))
+  : 'Awaiting printer status';
+
+$tokens = [
+  'apiKey' => (string)(getenv('CIS_API_KEY') ?: ''),
+  'nzPost' => (string)($fromOutletMeta['nz_post_api_key'] ?? $fromOutletMeta['nz_post_subscription_key'] ?? ''),
+  'gss'    => (string)($fromOutletMeta['gss_token'] ?? ''),
+];
+
+$capNzPost = isset($fromOutletMeta['nz_post_enabled']) ? (bool)$fromOutletMeta['nz_post_enabled'] : ($tokens['nzPost'] !== '');
+$capNzc    = isset($fromOutletMeta['nzc_enabled'])    ? (bool)$fromOutletMeta['nzc_enabled']    : ($tokens['gss'] !== '');
+
+$freightCalculator = null;
+$weightedItems      = [];
+try {
+  $freightCalculator = new FreightCalculator();
+  $weightedItems     = $freightCalculator->getWeightedItems($txId);
+} catch (Throwable $freightError) {
+  $freightCalculator = null;
+  $weightedItems     = [];
+}
+
+$totalWeightGrams = 0;
+$totalItemUnits   = 0;
+foreach ($weightedItems as $weightedRow) {
+  $totalWeightGrams += max(0, (int)($weightedRow['line_weight_g'] ?? 0));
+  $totalItemUnits   += max(0, (int)($weightedRow['qty'] ?? 0));
+}
+
+$freightMetrics = [
+  'total_weight_grams' => $totalWeightGrams,
+  'total_weight_kg'    => $totalWeightGrams > 0 ? round($totalWeightGrams / 1000, 3) : 0.0,
+  'total_items'        => $totalItemUnits,
+  'line_count'         => count($weightedItems),
+];
+
+$autoPlan = $freightCalculator instanceof FreightCalculator
+  ? tfx_build_dispatch_autoplan($totalWeightGrams, $totalItemUnits, $freightCalculator)
+  : null;
+
+$timeline = [];
+$currentUserName = '';
+try {
+  $staffResolver = new StaffNameResolver();
+  $currentUserName = $staffResolver->name($userId) ?? '';
+
+  $notesService = new NotesService();
+  $notesRows = $notesService->listTransferNotes($txId);
+  foreach ($notesRows as $noteRow) {
+    $authorId = (int)($noteRow['created_by'] ?? 0);
+    $authorName = $staffResolver->name($authorId) ?? ($authorId > 0 ? sprintf('User #%d', $authorId) : 'System');
+
+    $timeline[] = [
+      'id'   => (int)($noteRow['id'] ?? 0),
+      'scope'=> 'note',
+      'text' => (string)($noteRow['note_text'] ?? ''),
+      'ts'   => (string)($noteRow['created_at'] ?? ''),
+      'user' => $authorName,
+    ];
+  }
+} catch (Throwable $timelineError) {
+  $timeline = [];
+}
+
+
+$createdStamp = $transfer['created_at'] ?? null;
+if ($createdStamp) {
+  $timeline[] = [
+    'id'      => 0,
+    'scope'   => 'system',
+    'text'    => sprintf('Transfer #%d created', $txId),
+    'ts'      => (string)$createdStamp,
+    'user'    => 'System',
+    'persist' => true,
+  ];
+}
+
+$timeline = array_values(array_filter($timeline, static function (array $entry): bool {
+  return ($entry['persist'] ?? false) === true;
+}));
+
+if (!$timeline) {
+  $timeline[] = [
+    'id'      => 0,
+    'scope'   => 'system',
+    'text'    => sprintf('Transfer #%d created', $txId),
+    'ts'      => (string)($createdStamp ?: date('Y-m-d H:i:s')),
+    'user'    => 'System',
+    'persist' => true,
+  ];
+}
+
+usort($timeline, static function (array $a, array $b): int {
+  $ta = strtotime((string)($a['ts'] ?? '')) ?: 0;
+  $tb = strtotime((string)($b['ts'] ?? '')) ?: 0;
+  return $ta <=> $tb;
+});
+$timeline = array_values(array_reduce($timeline, static function (array $carry, array $entry): array {
+  $key = sprintf('%s|%s|%s', (string)($entry['scope'] ?? ''), (string)($entry['id'] ?? ''), (string)($entry['ts'] ?? ''));
+  $carry[$key] = $entry;
+  return $carry;
+}, []));
+$bootPayload = [
+  'transferId'   => $txId,
+  'fromOutletId' => $fromOutletId,
+  'toOutletId'   => $toOutletId,
+  'fromOutletVendId' => $fromVendId,
+  'toOutletVendId'   => $toVendId,
+  'fromOutlet'   => $fromName,
+  'toOutlet'     => $toName,
+  'fromLine'     => $fromLine,
+  'capabilities' => [
+    'carriers' => [
+      'nzpost' => $capNzPost,
+      'nzc'    => $capNzc,
+    ],
+    'printPool' => [
+      'online'      => $printPoolOnline,
+      'onlineCount' => $printersOnline,
+      'totalCount'  => $printersTotal,
+    ],
+  ],
+  'tokens'    => $tokens,
+  'endpoints' => [
+    'rates'          => '/modules/transfers/stock/api/rates.php',
+    'create'         => '/modules/transfers/stock/api/create_label.php',
+    'address_facts'  => '/modules/transfers/stock/api/address_facts.php',
+    'print_pool'     => '/modules/transfers/stock/api/print_pool_status.php',
+    'save_pickup'    => '/modules/transfers/stock/api/save_pickup.php',
+    'save_internal'  => '/modules/transfers/stock/api/save_internal.php',
+    'save_dropoff'   => '/modules/transfers/stock/api/save_dropoff.php',
+    'notes_add'      => '/modules/transfers/stock/api/notes_add.php',
+  ],
+  'metrics'   => $freightMetrics,
+  'ui'        => [
+    'showCourierDetail' => $showCourierDetail,
+  ],
+  'timeline'  => $timeline,
+  'sourceStockMap' => $sourceStockMap,
+  'currentUser' => [
+    'id'   => $userId,
+    'name' => $currentUserName,
+  ],
+];
+
+if ($autoPlan !== null) {
+  $bootPayload['autoplan'] = $autoPlan;
+}
 
 // --------------------------------------------------------------------------------------
 // Templates
@@ -178,6 +531,7 @@ $toLbl   = htmlspecialchars($toRaw   !== '' ? $toRaw   : (string)($transfer['out
 include $DOCUMENT_ROOT . '/assets/template/html-header.php';
 include $DOCUMENT_ROOT . '/assets/template/header.php';
 ?>
+
 <body class="app header-fixed sidebar-fixed aside-menu-fixed sidebar-lg-show" data-page="transfer-pack" data-txid="<?= (int)$txId ?>">
   <div class="app-body">
     <?php include $DOCUMENT_ROOT . '/assets/template/sidemenu.php'; ?>
@@ -192,6 +546,24 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
       </nav>
 
       <div class="container-fluid animated fadeIn">
+        <?php if ($isPackaged): ?>
+        <section class="alert alert-warning border-warning bg-white shadow-sm mb-4" role="status" aria-live="polite">
+          <div class="d-flex align-items-start" style="gap:12px;">
+            <i class="fa fa-exclamation-triangle text-warning" aria-hidden="true" style="font-size:1.4rem; padding-top:2px;"></i>
+            <div>
+              <h2 class="h5 mb-2 text-warning" style="font-weight:700;">Heads up: this transfer is in <span class="text-uppercase">PACKAGED</span> mode</h2>
+              <p class="mb-2 text-muted">“Mark as Packed” already ran. You can still make last-minute edits, but dispatch isn’t locked until you send it.</p>
+              <ul class="mb-2 pl-3">
+                <li>Adjusting counts, parcels, or notes will update the existing packed shipment record.</li>
+                <li>No data has been pushed to Lightspeed/Vend yet; that only happens when you mark it as sent.</li>
+                <li>Accidental sends can’t be undone here—grab Ops if you need a rollback before dispatch.</li>
+              </ul>
+              <p class="mb-0"><strong>Ready to hand over?</strong> Use “Mark as Packed &amp; Send” from the Pack console when the consignment is actually leaving.</p>
+            </div>
+          </div>
+        </section>
+        <?php endif; ?>
+
         <!-- Search / Add Panel -->
         <section class="card mb-3" id="product-search-card" aria-labelledby="product-search-title">
           <div class="card-header d-flex justify-content-between align-items-center" style="gap:12px;">
@@ -199,7 +571,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
               <span class="sr-only" id="product-search-title">Product Search</span>
               <i class="fa fa-search text-muted" aria-hidden="true"></i>
               <input type="text" id="product-search-input" class="form-control form-control-sm"
-                     placeholder="Search products by name, SKU, handle, ID… (use * wildcard)" autocomplete="off" aria-label="Search products">
+                placeholder="Search products by name, SKU, handle, ID… (use * wildcard)" autocomplete="off" aria-label="Search products">
               <button class="btn btn-sm btn-outline-primary" id="product-search-run" type="button" title="Run search" aria-label="Run search">
                 <i class="fa fa-search" aria-hidden="true"></i>
               </button>
@@ -262,8 +634,8 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                 <div class="d-flex align-items-center" style="gap:10px;">
                   <!-- Draft Status Pill -->
                   <button type="button" id="draft-indicator" class="draft-status-pill status-idle"
-                          data-state="idle" aria-live="polite"
-                          aria-label="Draft status: idle. No unsaved changes." title="Draft status" disabled>
+                    data-state="idle" aria-live="polite"
+                    aria-label="Draft status: idle. No unsaved changes." title="Draft status" disabled>
                     <span class="pill-icon" aria-hidden="true"></span>
                     <span class="pill-text" id="draft-indicator-text">Idle</span>
                   </button>
@@ -289,6 +661,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                         <th style="width:38px;" scope="col">#</th>
                         <th scope="col">Product</th>
                         <th scope="col">Planned Qty</th>
+                        <th scope="col">Qty in stock</th>
                         <th scope="col">Counted Qty</th>
                         <th scope="col">To</th>
                         <th scope="col">ID</th>
@@ -300,13 +673,15 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                       if ($items) {
                         foreach ($items as $i) {
                           $row++;
-                          $iid       = (int)($i['id'] ?? 0);
-                          $planned   = max(0, (int)($i['qty_requested'] ?? 0));
-                          $sentSoFar = max(0, (int)($i['qty_sent_total'] ?? 0));
-                          $inventory = max($planned, $sentSoFar);
+                          $iid         = (int)($i['id'] ?? 0);
+                          $productId   = (int)($i['product_id'] ?? 0);
+                          $planned     = max(0, (int)($i['qty_requested'] ?? 0));
+                          $sentSoFar   = max(0, (int)($i['qty_sent_total'] ?? 0));
+                          $stockOnHand = $productId > 0 ? max(0, (int)($sourceStockMap[$productId] ?? 0)) : null;
+                          $inventory   = max($planned, $sentSoFar, $stockOnHand ?? 0);
                           if ($planned <= 0) continue;
 
-                          echo '<tr data-inventory="' . $inventory . '" data-planned="' . $planned . '">';
+                          echo '<tr data-product-id="' . $productId . '" data-inventory="' . $inventory . '" data-planned="' . $planned . '"' . ($stockOnHand !== null ? ' data-stock="' . $stockOnHand . '"' : '') . '>';
                           echo "<td class='text-center align-middle'>
                                   <button class='tfx-remove-btn' type='button' data-action='remove-product' aria-label='Remove product' title='Remove product'>
                                     <i class='fa fa-times' aria-hidden='true'></i>
@@ -315,6 +690,8 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                                 </td>";
                           echo '<td>' . tfx_render_product_cell($i) . '</td>';
                           echo '<td class="planned">' . $planned . '</td>';
+                          $stockLabel = $stockOnHand !== null ? number_format($stockOnHand) : '&mdash;';
+                          echo '<td class="stock">' . $stockLabel . '</td>';
                           echo "<td class='counted-td'>
                                   <input type='number' min='0' max='{$inventory}' value='" . ($sentSoFar ?: '') . "' class='form-control form-control-sm tfx-num' inputmode='numeric' aria-label='Counted quantity'>
                                   <span class='counted-print-value d-none'>" . ($sentSoFar ?: 0) . "</span>
@@ -324,7 +701,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                           echo '</tr>';
                         }
                       } else {
-                        echo '<tr><td colspan="6" class="text-center text-muted py-4">No items on this transfer.</td></tr>';
+                        echo '<tr><td colspan="7" class="text-center text-muted py-4">No items on this transfer.</td></tr>';
                       }
                       ?>
                     </tbody>
@@ -332,240 +709,617 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                 </div>
               </div>
             </div>
+             </div>
+             </section>
 
             <!-- ====================== PACK & SHIP — INLINE (HARDENED) ====================== -->
             <?php
-              // Resolve minimal context used by the ship UI
-              $PS_TID  = $txId;
-              $PS_FROM = $fromLbl;
-              $PS_TO   = $toLbl;
+            // Resolve minimal context used by the ship UI
+            $PS_TID  = $txId;
+            $PS_FROM = $fromLbl;
+            $PS_TO   = $toLbl;
             ?>
-            <section id="psx-app" class="psx container-fluid my-3" aria-label="Pack & Ship Panel">
-              <!-- Header: Route, mode, health -->
-              <div class="psx-card mb-3">
-                <div class="psx-row">
-                  <div class="psx-brand" aria-label="Route summary">
-                    <div class="psx-logo" aria-hidden="true"></div>
-                    <div>
-                      <div class="psx-title">Pack &amp; Ship — Transfer #<?= (int)$PS_TID ?></div>
-                      <div class="psx-sub"><?= $PS_FROM ?> → <?= $PS_TO ?></div>
-                    </div>
-                  </div>
-                  <div class="psx-right">
-                    <div class="psx-seg" role="tablist" aria-label="Mode">
-                      <button class="psx-tab is-active" data-mode="easy"  aria-pressed="true">Easy</button>
-                      <button class="psx-tab"          data-mode="pro"   aria-pressed="false">Pro</button>
-                    </div>
-                    <div class="psx-health" aria-label="Carrier health">
-                      <span class="psx-chip"><span class="psx-dot" style="background:#3b82f6"></span> NZ Post: <b id="psx-nzpost">CHECK…</b></span>
-                      <span class="psx-chip"><span class="psx-dot" style="background:#06b6d4"></span> NZ Couriers: <b id="psx-nzc">CHECK…</b></span>
-                      <button class="psx-btn psx-btn-sm" id="psx-help" type="button">Help / FAQ</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <section id="psx-app" class="psx<?= $showCourierDetail ? '' : ' psx-manual-mode' ?>" aria-label="Pack & Ship Panel">
+                      <?php // Dispatch Console (View) ?>
 
-              <div class="psx-grid">
-                <!-- LEFT: Packages + Analytics -->
-                <section class="psx-card" aria-labelledby="pkgs-title">
-                  <div class="psx-card-head">
-                    <div class="psx-hdr" id="pkgs-title">Packages</div>
-                    <div class="psx-actions" role="group" aria-label="Package actions">
-                      <button class="psx-btn psx-btn-sm" id="psx-add"   type="button">Add</button>
-                      <button class="psx-btn psx-btn-sm" id="psx-copy"  type="button">Copy</button>
-                      <button class="psx-btn psx-btn-sm" id="psx-reset" type="button">Reset</button>
-                    </div>
-                  </div>
+  <link rel="stylesheet" href="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/css/dispatch.css?v=1.2">
+  <style>
+    .psx .psx-manual-summary {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #f7f7fb, #ffffff);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    .psx .psx-summary-label {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+    .psx .psx-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin: 6px 0 0;
+    }
+    .psx .psx-summary-row {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.9rem;
+    }
+    .psx .psx-summary-key {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 2px;
+    }
+    .psx .psx-summary-val {
+      font-weight: 600;
+      color: #1f365c;
+    }
+    .psx .psx-comment-form {
+      margin-top: 12px;
+    }
+    .psx .psx-comment-grid {
+      display: grid;
+      grid-template-columns: 1fr minmax(140px, 160px) auto;
+      gap: 10px;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .psx .psx-comment-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .psx .psx-note-input {
+      border-radius: 10px;
+      border: 1px solid rgba(31, 54, 92, 0.18);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .psx .psx-note-input:focus {
+      border-color: #4664d8;
+      box-shadow: 0 0 0 0.2rem rgba(70, 100, 216, 0.2);
+    }
+    .psx .psx-note-btn {
+      border-radius: 999px;
+      padding-left: 20px;
+      padding-right: 20px;
+      font-weight: 600;
+      box-shadow: 0 6px 12px rgba(71, 98, 209, 0.25);
+    }
+    .wrapper {
+      width: 100%;
+      max-width: 100%;
+      margin: 18px 0;
+      padding: 0;
+    }
+    .hrow-main {
+      align-items: flex-start;
+      gap: 18px;
+      padding: 22px 24px 16px;
+    }
+    .title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .title-block h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #111831;
+    }
+    .title-block h1 .mono {
+      font-size: 20px;
+      letter-spacing: 0.05em;
+      color: #394266;
+    }
+    .title-block h1 .dest-text {
+      color: #1d2ed8;
+    }
+    .title-block .subtitle {
+      font-size: 14px;
+      color: #3b4b70;
+      font-weight: 500;
+    }
+    .title-block .subtitle span {
+      font-weight: 600;
+    }
+    .contact-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      font-size: 12px;
+      color: #66738f;
+    }
+    .contact-line .label {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #4f5d86;
+    }
+    .contact-line .value {
+      font-weight: 500;
+      color: #212a4a;
+    }
+    .contact-line .divider {
+      opacity: 0.6;
+      font-weight: 700;
+      color: #7a85a5;
+    }
+    .status-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      padding-top: 4px;
+    }
+    .status-block .status-meta {
+      font-size: 12px;
+      color: #6a7491;
+    }
+    .hrow-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 24px;
+      border-top: 1px solid var(--line);
+      background: linear-gradient(90deg, #f4f6ff, #f9faff);
+    }
+    .meta-chips {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .chip {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      min-width: 150px;
+    }
+    .chip .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #7a85a5;
+      font-weight: 700;
+    }
+    .chip .value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a2550;
+    }
+    .chip-primary {
+      background: linear-gradient(135deg, rgba(229,235,255,0.9), rgba(255,255,255,0.95));
+      border-color: rgba(119, 134, 255, 0.4);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+    }
+    .chip-primary .value {
+      color: #1b2bdd;
+    }
+    .hrow-meta .tnav {
+      margin-left: auto;
+    }
+    .hcard-body {
+      padding: 0 24px 20px;
+    }
+    .psx.psx-manual-mode .psx-parcel-card > header,
+    .psx.psx-manual-mode .psx-parcel-table,
+    .psx.psx-manual-mode .psx-parcel-tools,
+    .psx.psx-manual-mode .psx-parcel-switch,
+    .psx.psx-manual-mode .psx-capacity-info {
+      display: none !important;
+    }
+    .psx.psx-manual-mode .psx-slip-preview-wrap {
+      grid-column: 1 / -1;
+    }
+    .psx.psx-manual-mode .psx-capacity-card {
+      border-style: solid;
+      background: linear-gradient(135deg, #f7f8ff, #ffffff);
+    }
+  </style>
 
-                  <div class="psx-card-body">
-                    <div class="psx-table-wrap">
-                      <table class="psx-table" aria-label="Packages table">
-                        <thead><tr>
-                          <th scope="col">#</th><th scope="col">Name</th><th scope="col">W×L×H (cm)</th><th scope="col">Weight</th><th scope="col">Items</th><th scope="col" class="psx-right"></th>
-                        </tr></thead>
-                        <tbody id="psx-pkgs"></tbody>
-                      </table>
-                    </div>
-
-                    <div class="psx-rows mt-2">
-                      <div class="psx-analytics" aria-live="polite">
-                        <div class="psx-anal-head">Overview &amp; Smart Analytics</div>
-                        <div class="psx-anal-kpis">
-                          <div class="psx-kpi"><div class="psx-kpi-l">Boxes</div><div class="psx-kpi-v" id="kpiBoxes">0</div></div>
-                          <div class="psx-kpi"><div class="psx-kpi-l">Actual (kg)</div><div class="psx-kpi-v" id="kpiActual">0.0</div></div>
-                          <div class="psx-kpi"><div class="psx-kpi-l">Volumetric (kg)</div><div class="psx-kpi-v" id="kpiVol">0.0</div></div>
-                          <div class="psx-kpi"><div class="psx-kpi-l">Chargeable (kg)</div><div class="psx-kpi-v" id="kpiChg">0.0</div></div>
-                        </div>
-                        <div id="psx-warnings" class="psx-warnings" aria-live="polite"></div>
-                      </div>
-
-                      <div class="psx-capacity">
-                        <div class="psx-subhead">Capacity meters (25kg cap; 15kg for bags)</div>
-                        <div id="psx-meters"></div>
-                      </div>
-                    </div>
-
-                    <div class="psx-card-sub">
-                      <div class="psx-subhead">Slip Preview</div>
-                      <div id="psx-slip" class="psx-slip"></div>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- RIGHT: Options + Rates + Summary -->
-                <aside class="psx-card" aria-labelledby="opts-title">
-                  <div class="psx-card-head">
-                    <div class="psx-hdr" id="opts-title">Options</div>
-                    <div class="psx-muted">Delivery &amp; policy aware</div>
-                  </div>
-
-                  <div class="psx-card-body">
-                    <div class="psx-optrow" role="group" aria-label="Delivery options">
-                      <label class="psx-opt"><input type="checkbox" id="optSig" checked> <span>Signature</span></label>
-                      <label class="psx-opt"><input type="checkbox" id="optATL"> <span>ATL</span></label>
-                      <label class="psx-opt psx-opt-danger" title="R18 disabled for B2B"><input type="checkbox" id="optAge" disabled> <span>Age-Restricted</span></label>
-                      <label class="psx-opt"><input type="checkbox" id="optSat"> <span>Saturday</span></label>
-                    </div>
-
-                    <hr class="psx-sep" aria-hidden="true">
-
-                    <!-- Easy -->
-                    <div class="psx-easy" id="blkEasy">
-                      <div class="psx-row">
-                        <div class="psx-muted">Rates &amp; Services</div>
-                        <button class="psx-btn psx-btn-sm" id="btnGetRates" type="button">Get rates</button>
-                      </div>
-                      <div id="ratesList" class="psx-rates" aria-live="polite"></div>
-                      <div class="psx-sum" aria-live="polite">
-                        <div>
-                          <div class="psx-muted">Selected</div>
-                          <div id="sumCarrier" class="psx-strong">—</div>
-                          <div id="sumService" class="psx-sub">—</div>
-                        </div>
-                        <div class="psx-right">
-                          <div class="psx-muted">Total (GST incl)</div>
-                          <div id="sumTotal" class="psx-total">$0.00</div>
-                        </div>
-                      </div>
-                      <div class="psx-cta">
-                        <button class="psx-btn psx-btn-lg psx-btn-green" id="btnPrintNow"   type="button">Print Now</button>
-                        <button class="psx-btn psx-btn-lg psx-btn-blue"  id="btnCreateLabel" type="button">Create Label</button>
-                      </div>
-                    </div>
-
-                    <!-- Pro -->
-                    <div class="psx-pro d-none" id="blkPro">
-                      <div class="psx-subhead">Live Rate Matrix (GST incl)</div>
-                      <div class="psx-table-wrap">
-                        <table class="psx-table psx-matrix" id="tblMatrix" aria-label="Rate matrix">
-                          <thead>
-                            <tr><th>Carrier</th><th>Service</th><th>Base</th><th>Fuel</th><th>Rural</th><th>Sat</th><th>Sig</th><th>Other</th><th class="psx-right">Total</th></tr>
-                          </thead>
-                          <tbody></tbody>
-                        </table>
-                      </div>
-                      <div class="psx-subhead mt-2">Address Facts</div>
-                      <div id="psx-facts" class="psx-facts" aria-live="polite"></div>
-                      <div class="psx-muted small mt-2">If any surcharge is implied by flags but missing in a rate, we’ll warn and log <b>RATES_SURCHARGE_MISMATCH</b>.</div>
-                    </div>
-
-                    <hr class="psx-sep" aria-hidden="true">
-
-                    <div class="psx-card-sub" aria-label="Route">
-                      <div class="psx-subhead">Route</div>
-                      <div class="psx-route"><span class="psx-tag">From</span> <?= $PS_FROM ?></div>
-                      <div class="psx-route"><span class="psx-tag">To</span> <?= $PS_TO ?></div>
-                    </div>
-                  </div>
-                </aside>
-              </div>
-
-              <!-- Sticky footer actions -->
-              <div class="psx-footer psx-card" aria-label="Actions footer">
-                <div class="psx-card-body psx-footgrid">
-                  <div>
-                    <label class="sr-only" for="noteText">Note</label>
-                    <input id="noteText" class="psx-input" placeholder="Add a note… (saved with the action)">
-                    <div class="psx-muted">Ctrl+Enter performs the primary action</div>
-                  </div>
-                  <div class="psx-footbtns" role="group" aria-label="Footer actions">
-                    <button class="psx-btn" id="btnReset"      type="button">Reset</button>
-                    <button class="psx-btn" id="btnPrintSlips"type="button">Print Slips</button>
-                    <button class="psx-btn psx-btn-red"  id="btnCancel" type="button">Cancel</button>
-                    <button class="psx-btn psx-btn-green" id="btnReady"  type="button">Mark Ready</button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Help / FAQ -->
-              <div class="psx-card mt-3" id="psx-faq" aria-label="Help & FAQ">
-                <div class="psx-card-head"><div class="psx-hdr">Help &amp; FAQ</div></div>
-                <div class="psx-card-body">
-                  <details class="psx-det"><summary><b>How do I go LIVE per outlet?</b></summary>
-                    <ol class="psx-list">
-                      <li>In <code>vend_outlets</code>, set tokens on the <b>FROM</b> outlet:
-                        <ul>
-                          <li><code>nz_post_api_key</code>, <code>nz_post_subscription_key</code> (Starshipit)</li>
-                          <li><code>gss_token</code> (GoSweetSpot), <code>courier_account_number</code> (optional)</li>
-                        </ul>
-                      </li>
-                      <li>Optionally set ENV for modes: <code>NZPOST_MODE=live</code>, <code>NZC_MODE=live</code>. Per-outlet keys take priority.</li>
-                      <li>Health check: <code>POST /modules/transfers/stock/api/pack_ship_api.php?action=health</code> (look for ENABLED + CONFIGURED).</li>
-                      <li>Services: <code>GET /modules/transfers/stock/api/services_live.php?transfer=ID&amp;carrier=nz_post</code> (or <code>gss</code>).</li>
-                      <li>Rates: <code>POST /modules/transfers/stock/api/rates.php</code> with your packages.</li>
-                      <li>Create: <code>POST /modules/transfers/stock/api/create_label.php?debug=1</code> with a valid <code>service_code</code>.</li>
-                    </ol>
-                  </details>
-
-                  <details class="psx-det"><summary><b>How does chargeable weight work?</b></summary>
-                    <div>Chargeable = max(<b>actual</b>, <b>volumetric</b>). We compute volumetric as <code>L×W×H (m³) × volumetric_factor</code> (default 200). Analytics shows both and the chargeable total.</div>
-                  </details>
-
-                  <details class="psx-det"><summary><b>Policies &amp; hard safety</b></summary>
-                    <ul class="psx-list">
-                      <li>Max 25 kg per box (bags ≤ 15 kg)</li>
-                      <li>R18 ⇒ Signature and disallows ATL</li>
-                      <li><b>B2B</b> ⇒ R18 disabled (UI + server)</li>
-                      <li>GST-incl costs everywhere; breakdown visible in Pro</li>
-                      <li>Idempotency via header + package hash</li>
-                    </ul>
-                  </details>
-
-                  <details class="psx-det"><summary><b>Troubleshooting</b></summary>
-                    <ul class="psx-list">
-                      <li>“No live rates”: token missing or service payload needs dims/weights → add dims or check services_live.</li>
-                      <li>“Create failed”: wrong service code or address → verify service list and address; use <code>?debug=1</code>.</li>
-                      <li>Heavy box warning: split or pick larger container; keep under 25 kg (bag 15 kg).</li>
-                    </ul>
-                  </details>
-                </div>
-              </div>
-
-              <!-- TERMINAL / Diagnostics -->
-              <section class="psx-card mt-3" aria-labelledby="term-title">
-                <div class="psx-card-head">
-                  <div class="psx-hdr" id="term-title">Terminal / Diagnostics</div>
-                  <div class="psx-muted">Live logs for connectivity & configuration</div>
-                </div>
-                <div class="psx-card-body">
-                  <div id="psx-terminal" class="psx-terminal" role="log" aria-live="polite" aria-atomic="false"></div>
-                </div>
-              </section>
-            </section>
-            <!-- ==================== / PACK & SHIP — INLINE (HARDENED) ===================== -->
+  <div class="wrapper">
+    <!-- HEADER & BODY -->
+    <div class="hcard">
+      <div class="hrow hrow-main">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div class="title-block">
+            <h1>
+              Transfer <span class="mono">#<?= (int)$txId ?></span>
+              → <span class="dest-text" id="headDestination"><?= htmlspecialchars($dispatchToOutlet, ENT_QUOTES, 'UTF-8') ?></span>
+            </h1>
+            <div class="subtitle">
+              Origin: <span id="headFrom"><?= htmlspecialchars($dispatchFromOutlet, ENT_QUOTES, 'UTF-8') ?></span>
+              · Your role: <span id="headRole">Warehouse</span>
+            </div>
+            <div class="contact-line">
+              <span class="label">Dispatching from:</span>
+              <span class="value" id="fromLine"><?= htmlspecialchars($fromLine, ENT_QUOTES, 'UTF-8') ?></span><br>
+              <span class="divider" aria-hidden="true">→</span>
+              <span class="label">Recipient:</span>
+              <span class="value" id="toLine"><?= htmlspecialchars($toLine !== '' ? $toLine : $dispatchToOutlet, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
           </div>
-        </section>
+        </div>
+        <div class="status-block" aria-label="Print pool status"<?= $showCourierDetail ? '' : ' hidden'; ?>>
+          <span class="pstat" id="printPoolStatus">
+            <span class="dot <?= $printPoolOnline ? 'ok' : 'err' ?>" id="printPoolDot"></span>
+            <span id="printPoolText"><?= htmlspecialchars($printPoolOnline ? 'Print pool online' : 'Print pool offline', ENT_QUOTES, 'UTF-8') ?></span>
+          </span>
+          <span class="status-meta" id="printPoolMeta"><?= htmlspecialchars($printPoolMetaText, ENT_QUOTES, 'UTF-8') ?></span>
+          <button class="btn small" id="btnSettings" type="button">Settings</button>
+        </div>
       </div>
+      <div class="hrow hrow-meta">
+        <div class="meta-chips">
+          <div class="chip chip-primary" aria-label="Destination outlet">
+            <span class="label">Destination</span>
+            <span class="value" id="toOutlet"><?= htmlspecialchars($dispatchToOutlet, ENT_QUOTES, 'UTF-8') ?></span>
+          </div>
+          <div class="chip">
+            <span class="label">Origin</span>
+            <span class="value" id="fromOutlet"><?= htmlspecialchars($dispatchFromOutlet, ENT_QUOTES, 'UTF-8') ?></span>
+          </div>
+          <div class="chip">
+            <span class="label">Transfer</span>
+            <span class="value mono">#<?= (int)$txId ?></span>
+          </div>
+          <div class="chip">
+            <span class="label">Your role</span>
+            <span class="value">Warehouse</span>
+          </div>
+        </div>
+        <nav class="tnav" aria-label="Method">
+          <a href="#" class="tab" data-method="courier" aria-current="page">Courier</a>
+          <a href="#" class="tab" data-method="pickup">Pickup</a>
+          <a href="#" class="tab" data-method="internal">Internal</a>
+          <a href="#" class="tab" data-method="dropoff">Drop-off</a>
+        </nav>
+      </div>
+    </div>
 
-      <!-- Page Assets (kept — page remains usable if any fail; terminal shows warnings) -->
-      <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-common.css?v=1">
-      <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack.css?v=1">
-      <link rel="stylesheet" href="/assets/css/stock-transfers/ship-ui.css?v=1">
-      <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack-inline.css?v=1">
-      <link rel="stylesheet" href="/assets/css/shipping/courier-control-tower.css?v=1">
+      <div class="hcard-body">
+        <!-- GRID -->
+        <div class="grid">
+      <!-- LEFT -->
+      <section class="card psx-parcel-card" aria-label="Parcels">
+        <header>
+          <div class="hdr">Mode</div>
+          <div class="psx-parcel-tools" style="display:flex;gap:8px;align-items:center">
+            <div class="switch psx-parcel-switch" role="group" aria-label="Container type">
+              <button class="tog" id="btnSatchel" aria-pressed="true" type="button">Satchel</button>
+              <button class="tog" id="btnBox" aria-pressed="false" type="button">Box</button>
+            </div>
+            <select id="preset" class="btn small" aria-label="Package preset"></select>
+            <button class="btn small js-add"  type="button">Add</button>
+            <button class="btn small js-copy" type="button">Copy</button>
+            <button class="btn small js-clear" type="button">Clear</button>
+            <button class="btn small js-auto"  type="button" title="Auto-assign products">Auto</button>
+          </div>
+        </header>
+        <div class="body psx-parcel-body">
+          <table class="psx-parcel-table" aria-label="Parcels table">
+            <thead><tr>
+              <th>#</th><th>Name</th><th>W x L x H (cm)</th><th>Weight</th><th>Items</th><th class="num"></th>
+            </tr></thead>
+            <tbody id="pkgBody"></tbody>
+          </table>
 
-      <script src="/assets/js/stock-transfers/transfers-common.js?v=1" defer></script>
-      <script src="/assets/js/stock-transfers/transfers-pack.js?v=1" defer></script>
+          <div class="card psx-capacity-card" style="border:1px dashed var(--line);margin-top:12px">
+            <div class="body">
+                <div class="psx-capacity-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="psx-capacity-info">
+                  <div class="sub" style="margin-bottom:6px">Capacity (25 kg boxes, 15 kg satchels)</div>
+                  <div id="meters" style="display:grid;gap:8px"></div>
+                </div>
+                <div class="psx-slip-preview-wrap">
+                  <div class="slip-head">
+                    <div class="sub">Slip Preview</div>
+                    <div class="slip-actions">
+                      <button class="btn small" id="btnSlipPrint" type="button">Print slip</button>
+                    </div>
+                  </div>
+                  <div class="slip slip-grid" aria-live="polite">
+                    <div class="slip-col slip-col-preview">
+                      <div class="rule"></div>
+                      <div class="big mono">TRANSFER #<span id="slipT"><?= (int)$txId ?></span></div>
+                      <div class="mono">FROM: <b id="slipFrom"><?= htmlspecialchars($dispatchFromOutlet, ENT_QUOTES, 'UTF-8') ?></b></div>
+                      <div class="mono">TO:&nbsp;&nbsp; <b id="slipTo"><?= htmlspecialchars($dispatchToOutlet, ENT_QUOTES, 'UTF-8') ?></b></div>
+                      <div class="mono" style="margin-top:6px">BOX <span id="slipBox">1</span> of
+                        <input id="slipTotal" class="pn" type="number" min="1" value="1" style="width:70px" aria-label="Total boxes"></div>
+                      <div class="rule"></div>
+                    </div>
+                    <div class="slip-col slip-col-tracking" id="manualTrackingWrap" hidden>
+                      <div class="sub" style="margin-bottom:2px">Tracking codes / URLs</div>
+                      <div class="tracking-input-row">
+                        <input id="trackingInput" class="form-control form-control-sm" placeholder="Paste tracking code or URL" autocomplete="off" aria-label="Tracking code or URL">
+                        <button class="btn small" id="trackingAdd" type="button">Add</button>
+                      </div>
+                      <ul class="tracking-list" id="trackingList" aria-live="polite" aria-label="Tracking references"></ul>
+                      <div class="tracking-empty" id="trackingEmpty" aria-hidden="true">No tracking references yet.</div>
+                      <div class="sub" style="font-size:11px;">These references print on the manual slip when the courier label is handled externally.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <h3 style="margin:12px 0 6px">Activity & Comments</h3>
+          <div class="feed" id="activityFeed" aria-live="polite"></div>
+          <form id="commentForm" class="psx-comment-form">
+            <div class="psx-comment-grid">
+              <input id="commentText" class="form-control form-control-sm psx-note-input" placeholder="Add a note… (saved to history)" autocomplete="off">
+              <select id="commentScope" class="form-control form-control-sm">
+                <option value="shipment">Shipment</option>
+              </select>
+              <button class="btn btn-primary btn-sm psx-note-btn" type="submit">Add note</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- RIGHT -->
+      <aside class="card" aria-label="Options & Rates" style="position:relative">
+        <header>
+          <div class="hdr">Options & Rates</div>
+          <span class="badge">Incl GST</span>
+        </header>
+
+        <div class="blocker" id="uiBlock">
+          <div class="msg">
+            <div style="font-weight:700;margin-bottom:6px">Print pool offline</div>
+            <div class="sub" style="margin-bottom:10px">Switched to Manual Tracking mode.</div>
+            <button class="btn small" id="dismissBlock" type="button">Ok</button>
+          </div>
+        </div>
+
+        <div class="body">
+          <div style="display:grid;gap:10px;margin-bottom:10px">
+            <div style="display:flex;gap:12px;flex-wrap:wrap"<?= $showCourierDetail ? '' : ' hidden'; ?>>
+              <label><input type="checkbox" id="optSig" checked> Sig</label>
+              <label><input type="checkbox" id="optATL"> ATL</label>
+              <label title="R18 disabled for B2B"><input type="checkbox" id="optAge" disabled> R18</label>
+              <label><input type="checkbox" id="optSat"> Saturday</label>
+            </div>
+
+            <!-- Reviewed By appears only in manual / pickup / internal / drop-off -->
+            <div id="reviewedWrap" style="display:none">
+              <label class="w-100 mb-0">Reviewed By
+                <input id="reviewedBy" class="form-control form-control-sm" placeholder="Staff initials / name">
+              </label>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#fcfdff;border:1px solid var(--line);border-radius:12px;padding:8px"<?= $showCourierDetail ? '' : ' hidden'; ?>>
+              <div><b>Address facts</b>
+                <div class="sub">Rural: <span id="factRural" class="mono">—</span></div>
+                <div class="sub">Saturday serviceable: <span id="factSat" class="mono">—</span></div>
+              </div>
+              <div><b>Notes</b><div class="sub">Saturday auto-disables if address isn’t serviceable.</div></div>
+            </div>
+          </div>
+
+          <!-- Courier rates -->
+          <div id="blkCourier">
+            <?php
+            if (!$showCourierDetail) {
+              $manualSummaryWeightKg = max(0.0, (float)($freightMetrics['total_weight_kg'] ?? 0));
+              $manualSummaryWeightLabel = $manualSummaryWeightKg > 0
+                ? number_format($manualSummaryWeightKg, $manualSummaryWeightKg >= 100 ? 0 : 1) . ' kg'
+                : '—';
+              $manualSummaryBoxes = null;
+              if (is_array($autoPlan ?? null) && isset($autoPlan['package_count'])) {
+                $manualSummaryBoxes = (int)$autoPlan['package_count'];
+              } elseif ($manualSummaryWeightKg > 0) {
+                $manualSummaryBoxes = max(1, (int)ceil($manualSummaryWeightKg / 15));
+              }
+              $manualSummaryBoxesLabel = $manualSummaryBoxes !== null
+                ? number_format($manualSummaryBoxes) . ' ' . ($manualSummaryBoxes === 1 ? 'box' : 'boxes')
+                : '—';
+              $manualSummaryFrom = htmlspecialchars($dispatchFromOutlet, ENT_QUOTES, 'UTF-8');
+              $manualSummaryTo   = htmlspecialchars($dispatchToOutlet, ENT_QUOTES, 'UTF-8');
+            }
+            ?>
+            <?php if (!$showCourierDetail): ?>
+            <div class="card border-0 shadow-sm mb-3" style="background:linear-gradient(135deg,#f9fafc,#fff);">
+              <div class="card-body py-3">
+                <div class="psx-manual-summary">
+                  <div class="text-uppercase text-secondary small psx-summary-label">Transfer summary</div>
+                  <div class="psx-summary-grid">
+                    <div class="psx-summary-row">
+                      <span class="psx-summary-key text-muted">From</span>
+                      <span class="psx-summary-val"><?= $manualSummaryFrom ?></span>
+                    </div>
+                    <div class="psx-summary-row">
+                      <span class="psx-summary-key text-muted">To</span>
+                      <span class="psx-summary-val"><?= $manualSummaryTo ?></span>
+                    </div>
+                    <div class="psx-summary-row">
+                      <span class="psx-summary-key text-muted">Transfer</span>
+                      <span class="psx-summary-val">#<?= (int)$txId ?></span>
+                    </div>
+                    <div class="psx-summary-row">
+                      <span class="psx-summary-key text-muted">Estimated weight</span>
+                      <span class="psx-summary-val"><?= $manualSummaryWeightLabel ?></span>
+                    </div>
+                    <div class="psx-summary-row">
+                      <span class="psx-summary-key text-muted">Estimated boxes required</span>
+                      <span class="psx-summary-val"><?= $manualSummaryBoxesLabel ?></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:12px;">
+                  <div>
+                    <h3 class="h6 mb-1 text-uppercase text-secondary" style="letter-spacing:0.08em;">Sent via Manual Courier</h3>
+                    <p class="mb-0 text-muted small">Pick the handover option so Ops can see how this consignment is leaving the warehouse.</p>
+                  </div>
+                  <div style="min-width:220px;">
+                    <label class="w-100 mb-0">
+                      <span class="text-muted small d-block mb-1">Manual courier method</span>
+                      <select id="manualCourierPreset" class="form-control form-control-sm">
+                        <option value="">Select an option…</option>
+                        <option value="nzpost_manifest">NZ Post Manifested</option>
+                        <option value="nzpost_counter">NZ Post Counter Drop-off</option>
+                        <option value="nzc_pickup">NZ Couriers Pick-up</option>
+                        <option value="third_party">Third-party / Other</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div class="manual-courier-status" id="manualCourierStatus" role="status" aria-live="polite">
+                  <span class="status-dot"></span>
+                  <span>Select a manual courier method to confirm the handover.</span>
+                </div>
+                <div class="manual-courier-extra" id="manualCourierExtraWrap" hidden>
+                  <label class="w-100 mb-0">
+                    <span class="text-muted small d-block mb-1">Describe third-party courier</span>
+                    <input id="manualCourierExtraDetail" class="form-control form-control-sm" placeholder="Carrier name / reference">
+                  </label>
+                </div>
+              </div>
+            </div>
+            <?php endif; ?>
+            <div class="rates" id="ratesList"<?= $showCourierDetail ? '' : ' hidden'; ?>></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"<?= $showCourierDetail ? '' : ' hidden'; ?>>
+              <div>
+                <div class="sub">Selected</div>
+                <div id="sumCarrier" style="font-weight:700">—</div>
+                <div id="sumService" class="sub">—</div>
+              </div>
+              <div style="text-align:right">
+                <div class="sub">Total (Incl GST)</div>
+                <div id="sumTotal" style="font-weight:700;font-size:18px">$0.00</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+              <?php if ($showCourierDetail): ?>
+              <button class="btn" id="btnPrintOnly" type="button">Print only</button>
+              <?php endif; ?>
+              <button class="btn primary" id="btnPrintPacked" type="button"><?= $showCourierDetail ? 'Print &amp; Mark Packed' : 'Mark as Packed' ?></button>
+            </div>
+            <div class="print-help" id="printActionHelp" role="note">
+              <div class="print-help-icon" aria-hidden="true">i</div>
+              <div class="print-help-body">
+                <div class="print-help-title">Packed vs Packed &amp; Sent</div>
+                <ul class="print-help-list">
+                  <li><strong>Mark as Packed</strong> prints paperwork and keeps the transfer in the warehouse queue for later dispatch.</li>
+                  <li><strong>Mark as Packed &amp; Sent</strong> records the handover, stores the courier method + tracking numbers, and signals Ops that it has physically left.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Other methods -->
+          <div id="blkPickup" hidden>
+            <div style="display:grid;gap:8px">
+              <label class="mb-0 w-100">Picked up by
+                <input id="pickupBy" class="form-control form-control-sm" placeholder="Driver / Company">
+              </label>
+              <label class="mb-0 w-100">Contact phone
+                <input id="pickupPhone" class="form-control form-control-sm" placeholder="+64…">
+              </label>
+              <label class="mb-0 w-100">Pickup time
+                <input id="pickupTime" class="form-control form-control-sm" type="datetime-local">
+              </label>
+              <label class="mb-0 w-100">Parcels
+                <input id="pickupPkgs" class="form-control form-control-sm" type="number" min="1" value="1">
+              </label>
+              <label class="mb-0 w-100">Notes
+                <textarea id="pickupNotes" class="form-control form-control-sm" rows="2"></textarea>
+              </label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px">
+              <button class="btn primary" id="btnSavePickup" type="button">Save Pickup</button>
+            </div>
+          </div>
+
+          <div id="blkInternal" hidden>
+            <div style="display:grid;gap:8px">
+              <label class="mb-0 w-100">Driver/Van
+                <input id="intCarrier" class="form-control form-control-sm" placeholder="Internal run name">
+              </label>
+              <label class="mb-0 w-100">Depart
+                <input id="intDepart" class="form-control form-control-sm" type="datetime-local">
+              </label>
+              <label class="mb-0 w-100">Boxes
+                <input id="intBoxes" class="form-control form-control-sm" type="number" min="1" value="1">
+              </label>
+              <label class="mb-0 w-100">Notes
+                <textarea id="intNotes" class="form-control form-control-sm" rows="2"></textarea>
+              </label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px">
+              <button class="btn primary" id="btnSaveInternal" type="button">Save Internal</button>
+            </div>
+          </div>
+
+          <div id="blkDropoff" hidden>
+            <div style="display:grid;gap:8px">
+              <label class="mb-0 w-100">Drop-off location
+                <input id="dropLocation" class="form-control form-control-sm" placeholder="NZ Post / NZC depot">
+              </label>
+              <label class="mb-0 w-100">When
+                <input id="dropWhen" class="form-control form-control-sm" type="datetime-local">
+              </label>
+              <label class="mb-0 w-100">Boxes
+                <input id="dropBoxes" class="form-control form-control-sm" type="number" min="1" value="1">
+              </label>
+              <label class="mb-0 w-100">Notes
+                <textarea id="dropNotes" class="form-control form-control-sm" rows="2"></textarea>
+              </label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px">
+              <button class="btn primary" id="btnSaveDrop" type="button">Save Drop-off</button>
+            </div>
+          </div>
+
+          <div id="blkManual" hidden>
+            <div class="hdr" style="margin:6px 0">Manual Tracking</div>
+            <div style="display:grid;gap:8px">
+              <label class="mb-0 w-100">Carrier
+                <select id="mtCarrier" class="form-control form-control-sm"><option>NZ Post</option><option>NZ Couriers</option></select>
+              </label>
+              <label class="mb-0 w-100">Tracking #
+                <input id="mtTrack" class="form-control form-control-sm" placeholder="Ticket / tracking number">
+              </label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px">
+              <button class="btn primary" id="btnSaveManual" type="button">Save Number</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+        </div> <!-- /.grid -->
+      </div> <!-- /.hcard-body -->
+    </div> <!-- /.hcard -->
+  </div> <!-- /.wrapper -->
+
+
+  <!-- Boot payload for JS -->
+  <script>
+  window.DISPATCH_BOOT = <?= json_encode($bootPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+  </script>
+  <script src="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/js/dispatch.js?v=1.2"></script>
+
+            </section>
+          </div>
+
+          <!-- Page Assets (kept — page remains usable if any fail; terminal shows warnings) -->
+          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-common.css?v=1">
+          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack.css?v=1">
+<!--           <link rel="stylesheet" href="/assets/css/stock-transfers/shii.css?v=1"> -->
+          <link rel="stylesheet" href="/assets/css/stock-transfers/transfers-pack-inline.css?v=1">
+
+          <script src="/assets/js/stock-transfers/transfers-common.js?v=1" defer></script>
+          <script src="/assets/js/stock-transfers/transfers-pack.js?v=1" defer></script>
       <script src="/assets/js/stock-transfers/ship-ui.js?v=1" defer></script>
     </main>
   </div>
@@ -574,552 +1328,9 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
   <?php include $DOCUMENT_ROOT . '/assets/template/personalisation-menu.php'; ?>
   <?php include $DOCUMENT_ROOT . '/assets/template/footer.php'; ?>
 
-  <!-- Inline CSS (scoped) -->
-  <style>
-    /* Minimal scoped styling for psx UI + terminal; keep classy & readable */
-    .psx{--line:#e7e7ef;--ink:#0b1220;--muted:#667085;--blue1:#9ad2ff;--blue2:#3b82f6;--green1:#22c55e;--green2:#16a34a;--red:#ef4444;--shadow:0 16px 46px rgba(2,6,23,.10)}
-    .psx-card{border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow)}
-    .psx-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px}
-    .psx-brand{display:flex;gap:12px;align-items:center}
-    .psx-logo{width:40px;height:40px;border-radius:12px;background:conic-gradient(from 200deg,#c0a7ff,#7aa2ff,#22c55e)}
-    .psx-title{font-weight:800}
-    .psx-sub{color:var(--muted);font-size:12px}
-    .psx-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .psx-seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
-    .psx-tab{appearance:none;border:0;background:#fff;padding:8px 12px;font-weight:900;cursor:pointer}
-    .psx-tab.is-active{background:linear-gradient(180deg,var(--blue1),var(--blue2));color:#fff}
-    .psx-health{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .psx-chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:#fff;font-weight:700}
-    .psx-dot{width:10px;height:10px;border-radius:50%}
-    .psx-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
-    @media(max-width:1100px){.psx-grid{grid-template-columns:1fr}}
-    .psx-card-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
-    .psx-hdr{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.02em}
-    .psx-card-body{padding:12px 14px}
-    .psx-actions{display:flex;gap:8px}
-    .psx-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:800}
-    .psx-btn-sm{padding:6px 10px;font-size:12px}
-    .psx-btn-lg{padding:12px 16px;font-size:16px}
-    .psx-btn-blue{background:linear-gradient(180deg,var(--blue1),var(--blue2));color:#fff;border-color:transparent}
-    .psx-btn-green{background:linear-gradient(180deg,var(--green1),var(--green2));color:#fff;border-color:transparent}
-    .psx-btn-red{background:linear-gradient(180deg,#ff7b7b,var(--red));color:#fff;border-color:transparent}
-    .psx-muted{color:var(--muted);font-size:12px}
-    .psx-table{width:100%;border-collapse:collapse}
-    .psx-table th,.psx-table td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
-    .psx-right{text-align:right}
-    .psx-table-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden}
-    .psx-rows{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    @media(max-width:1100px){.psx-rows{grid-template-columns:1fr}}
-    .psx-analytics{border:1px dashed var(--line);border-radius:12px;padding:10px}
-    .psx-anal-head{font-weight:900;margin-bottom:8px}
-    .psx-anal-kpis{display:flex;gap:8px;flex-wrap:wrap}
-    .psx-kpi{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
-    .psx-kpi-l{font-size:11px;color:#475569}
-    .psx-kpi-v{font-size:16px;font-weight:900}
-    .psx-warnings .psx-warn{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:10px;padding:8px 10px;margin-top:6px}
-    .psx-capacity .bar{height:10px;border-radius:6px;background:#eef2ff;overflow:hidden}
-    .psx-capacity .fill{height:100%;background:linear-gradient(90deg,var(--blue1),var(--blue2))}
-    .psx-subhead{font-weight:900;margin:10px 0 6px}
-    .psx-slip{min-height:120px;border:1px dashed var(--line);border-radius:10px;display:grid;place-items:center;color:#64748b;padding:14px}
-    .psx-optrow{display:flex;gap:8px;flex-wrap:wrap}
-    .psx-opt{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;background:#fff;padding:6px 10px;font-weight:800}
-    .psx-opt-danger{border-color:#f0caca;color:#b91c1c}
-    .psx-sep{border:0;border-top:1px solid var(--line);margin:10px 0}
-    .psx-rates .rate{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;cursor:pointer}
-    .psx-rates .rate.active{outline:2px solid var(--blue2);outline-offset:2px;background:linear-gradient(180deg,#fff,#f7fbff)}
-    .psx-sum{display:flex;justify-content:space-between;gap:10px;margin-top:8px}
-    .psx-strong{font-weight:900}
-    .psx-total{font-size:22px;font-weight:900}
-    .psx-cta{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-    .psx-route{margin-top:6px}
-    .psx-tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:2px 6px;font-size:11px;margin-right:6px}
-    .psx-footer{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(255,255,255,.9),#fff)}
-    .psx-footgrid{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
-    .psx-input{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-    .psx-footbtns{display:flex;gap:8px}
-    .psx-det{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
-    .psx-flash{animation:psx-hi 0.8s ease}
-    @keyframes psx-hi{0%{outline:2px solid var(--blue2)}100%{outline:0}}
-    .psx-facts{display:flex;gap:8px;flex-wrap:wrap}
-    .psx-facts .fact{border:1px solid var(--line);border-radius:999px;padding:4px 8px;font-weight:700}
-    .psx-matrix td,.psx-matrix th{font-size:13px}
-    .psx-btn:focus{outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
 
-    /* Terminal (diagnostics) */
-    .psx-terminal{font:12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      border:1px solid var(--line);border-radius:10px;padding:10px;background:#0b1220;color:#e2e8f0;max-height:240px;overflow:auto}
-    .psx-terminal .log{white-space:pre-wrap;margin:0 0 6px}
-    .log--ok   {color:#86efac}
-    .log--warn {color:#facc15}
-    .log--err  {color:#fda4af}
-    .log--info {color:#93c5fd}
-  </style>
-
-  <!-- Inline JS (robust fetch, timeouts, retries + terminal logs) -->
-  <script>
-  (function(){
-    "use strict";
-
-    // ---------------------------- Utilities ----------------------------
-    const TXID = Number(document.body?.dataset?.txid || 0) || 0;
-
-    const API = {
-      HEALTH: '/modules/transfers/stock/api/pack_ship_api.php?action=health',
-      RATES_SIMPLE: '/modules/transfers/stock/api/rates.php',
-      PACK_API: '/modules/transfers/stock/api/pack_ship_api.php?action=rates',
-      CREATE_LABEL: '/modules/transfers/stock/api/create_label.php'
-    };
-
-    // Terminal logger
-    const termEl = document.getElementById('psx-terminal');
-    function log(msg, level='info'){
-      if(!termEl) return;
-      const row = document.createElement('div');
-      row.className = `log log--${level}`;
-      const ts = new Date().toLocaleString();
-      row.textContent = `[${ts}] ${String(msg)}`;
-      termEl.appendChild(row);
-      termEl.scrollTop = termEl.scrollHeight;
-      // Console-safe mirror
-      const fn = level==='err' ? 'error' : (level==='warn' ? 'warn' : (level==='ok' ? 'log' : 'info'));
-      (console[fn]||console.log).call(console, `[Pack&Ship] ${msg}`);
-    }
-
-    // Abortable fetch with timeout & retries (exponential backoff + jitter)
-    async function fetchJSON(url, opts={}, {timeoutMs=12000, retries=1, label='fetch'} = {}){
-      const ctrl = new AbortController();
-      const id = setTimeout(()=>ctrl.abort(), timeoutMs);
-      try{
-        const res = await fetch(url, {...opts, signal: ctrl.signal});
-        const ct = (res.headers.get('content-type')||'').toLowerCase();
-        let data = null;
-        if (ct.includes('application/json')) {
-          data = await res.json();
-        } else {
-          const text = await res.text();
-          // Try parse; if fails, wrap
-          try { data = JSON.parse(text); } catch { data = { ok:false, error:'NON_JSON_RESPONSE', raw:text }; }
-        }
-        if (!res.ok) {
-          const code = res.status;
-          throw Object.assign(new Error(`${label} HTTP ${code}`), {code, data});
-        }
-        return data;
-      } catch (e){
-        clearTimeout(id);
-        const isAbort = e?.name === 'AbortError';
-        const msg = isAbort ? `${label} timeout after ${timeoutMs}ms` : `${label} failed: ${e?.message||e}`;
-        log(msg, 'warn');
-
-        if (retries > 0) {
-          const n = Math.max(0, 2 - retries + 1);
-          const backoff = Math.min(2000 * n, 4000) + Math.random()*500;
-          log(`Retrying ${label} in ${Math.round(backoff)}ms…`, 'info');
-          await new Promise(r=>setTimeout(r, backoff));
-          return fetchJSON(url, opts, {timeoutMs, retries: retries-1, label});
-        }
-
-        throw e;
-      } finally {
-        clearTimeout(id);
-      }
-    }
-
-    function $(s,root){ return (root||document).querySelector(s); }
-    function $all(s,root){ return Array.from((root||document).querySelectorAll(s)); }
-    const num = v => Math.max(0, +v || 0);
-    const fmt$ = n => '$' + (Number(n)||0).toFixed(2);
-    const fmtKg = n => (Number(n)||0).toFixed(1) + ' kg';
-
-    // ---------------------------- Pack & Ship State ----------------------------
-    const state = {
-      mode: 'easy',
-      volumetricFactor: 200,
-      packages: [{ name:'Box M 400×300×200', w:30, l:40, h:20, kg:4.2, items:9, kind:'box' }],
-      selection: null,
-      quotes: []
-    };
-
-    function kgVol(p){
-      const Lm = (num(p.l)/100), Wm = (num(p.w)/100), Hm = (num(p.h)/100);
-      if (Lm<=0 || Wm<=0 || Hm<=0) return 0;
-      return (Lm*Wm*Hm) * state.volumetricFactor;
-    }
-    function chargeableKg(){
-      let a=0,v=0;
-      state.packages.forEach(p=>{ a += num(p.kg); v += Math.max(num(p.kg), kgVol(p)); });
-      return { actual:a, volumetric:v, chargeable: Math.max(a, v) };
-    }
-
-    // ---------------------------- Renderers ----------------------------
-    function renderPackages(){
-      const body = $('#psx-pkgs');
-      if(!body) return;
-      body.innerHTML='';
-      state.packages.forEach((p,i)=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${i+1}</td>
-          <td>${p.name}</td>
-          <td><span class="psx-muted">${p.w}×${p.l}×${p.h}</span></td>
-          <td>${fmtKg(p.kg)}</td>
-          <td>${p.items||0}</td>
-          <td class="psx-right"><button class="psx-btn psx-btn-sm" data-del="${i}" type="button" aria-label="Remove package ${i+1}">×</button></td>`;
-        body.appendChild(tr);
-      });
-      body.onclick = (e)=>{
-        const i = e.target.getAttribute('data-del'); if (i==null) return;
-        state.packages.splice(+i,1); renderPackages(); renderAnalytics();
-      };
-      renderCapacity();
-      renderAnalytics();
-      const slip = $('#psx-slip');
-      if (slip) {
-        slip.innerHTML = `
-          <div style="font-family:ui-monospace,Menlo,Consolas,monospace">
-            <div><strong>TRANSFER #${TXID || '—'}</strong></div>
-            <div>FROM: <?= $PS_FROM ?></div>
-            <div>TO:   <?= $PS_TO ?></div>
-            <div class="psx-muted" style="margin-top:6px">BOX 1 of ${Math.max(1,state.packages.length)}</div>
-          </div>`;
-      }
-    }
-
-    function renderCapacity(){
-      const wrap = $('#psx-meters'); if(!wrap) return;
-      wrap.innerHTML='';
-      state.packages.forEach((p,i)=>{
-        const cap = (p.kind==='bag') ? 15 : 25;
-        const pct = Math.min(100, Math.round((num(p.kg)/cap)*100));
-        const row = document.createElement('div');
-        row.innerHTML = `
-          <div class="psx-muted">Box ${i+1} · ${fmtKg(p.kg)} / ${cap.toFixed(1)} kg</div>
-          <div class="bar"><div class="fill" style="width:${pct}%"></div></div>`;
-        wrap.appendChild(row);
-      });
-    }
-
-    function renderAnalytics(){
-      const k = chargeableKg();
-      const s = [
-        ['#kpiBoxes',   state.packages.length],
-        ['#kpiActual',  k.actual.toFixed(1)],
-        ['#kpiVol',     k.volumetric.toFixed(1)],
-        ['#kpiChg',     k.chargeable.toFixed(1)],
-      ];
-      s.forEach(([sel,val])=>{ const el=$(sel); if(el) el.textContent = String(val); });
-
-      const warn = [];
-      state.packages.forEach((p, i) => {
-        const cap = p.kind === 'bag' ? 15 : 25;
-        if (num(p.kg) > cap) warn.push(`Box ${i + 1} exceeds ${cap} kg cap (${fmtKg(p.kg)})`);
-        if (!p.l || !p.w || !p.h) warn.push(`Box ${i + 1} missing dimensions; volumetric may be underestimated`);
-      });
-
-      const W = $('#psx-warnings');
-      if(!W) return;
-      W.innerHTML = '';
-      if (warn.length) {
-        warn.forEach(t => {
-          const d = document.createElement('div');
-          d.className = 'psx-warn';
-          d.textContent = `⚠️ ${t}`;
-          W.appendChild(d);
-        });
-      }
-    }
-
-    function clearSelection(){
-      const c = $('#sumCarrier'), s = $('#sumService'), t = $('#sumTotal');
-      if (c) c.textContent = '—';
-      if (s) s.textContent = '—';
-      if (t) t.textContent = '$0.00';
-      state.selection = null;
-    }
-
-    function selectRate(card, carrier, service, total, name){
-      $all('.psx-rates .rate').forEach(el=> el.classList.remove('active'));
-      if (card) card.classList.add('active');
-      state.selection = { carrier, service, total };
-      const c = $('#sumCarrier'), s = $('#sumService'), t = $('#sumTotal');
-      if (c) c.textContent = (carrier==='nz_post' ? 'NZ Post' : String(carrier||'').toUpperCase());
-      if (s) s.textContent = name || service || '—';
-      if (t) t.textContent = fmt$(+total||0);
-    }
-
-    // ---------------------------- Easy Rates ----------------------------
-    async function getRatesEasy(){
-      clearSelection();
-      const list = $('#ratesList');
-      if(list) list.innerHTML = '<div class="psx-muted">Loading rates…</div>';
-      const pk = state.packages.map(p => ({ length_cm:p.l, width_cm:p.w, height_cm:p.h, weight_kg:p.kg }));
-      const payload = { transfer_id: TXID, carrier:'nz_post', packages: pk };
-
-      try{
-        const d = await fetchJSON(API.RATES_SIMPLE, {
-          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-        }, {timeoutMs:12000, retries:1, label:'rates-simple'});
-
-        const quotes = Array.isArray(d?.quotes) ? d.quotes : [];
-        renderRatesEasy(quotes);
-        if(!quotes.length){
-          log('No live rates returned. Check outlet credentials or provide dimensions/weight.', 'warn');
-        } else {
-          log(`Received ${quotes.length} rate(s) from simple rates endpoint.`, 'ok');
-        }
-      }catch(e){
-        if(list) list.innerHTML = `<div class="psx-muted">Rate lookup failed.</div>`;
-        log(`Easy rates error: ${e?.message||e}`, 'err');
-      }
-    }
-
-    function renderRatesEasy(quotes){
-      const list = $('#ratesList'); if (!list) return;
-      list.innerHTML='';
-      if (!quotes.length){
-        list.innerHTML = `<div class="psx-muted">No live rates. You can still print slips or create labels.</div>`;
-        return;
-      }
-      quotes.forEach((q,idx)=>{
-        const div = document.createElement('div');
-        div.className='rate';
-        const total = +q.total_price || 0;
-        const svc   = q.service_name || q.service_code || 'Service';
-        div.innerHTML = `
-          <div class="psx-row">
-            <div><strong>${svc}</strong><div class="psx-muted">GST incl</div></div>
-            <div style="font-weight:900">${fmt$(total)}</div>
-          </div>`;
-        div.addEventListener('click', ()=> selectRate(div,'nz_post',q.service_code,total,svc));
-        list.appendChild(div);
-        if (idx===0) div.click();
-      });
-    }
-
-    // ---------------------------- Pro (Matrix) Rates ----------------------------
-    async function getRatesPro(){
-      const tb = $('#tblMatrix tbody'); if (tb) tb.innerHTML = `<tr><td colspan="9" class="psx-muted">Loading…</td></tr>`;
-      const pk = state.packages.map(p => ({ l:num(p.l), w:num(p.w), h:num(p.h), kg:num(p.kg), items:p.items||0 }));
-      const options = { sig: $('#optSig')?.checked, atl: $('#optATL')?.checked, age:false };
-      const context = { rural: false, saturday: $('#optSat')?.checked };
-
-      try{
-        const d = await fetchJSON(API.PACK_API, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ packages: pk, options, context })
-        }, {timeoutMs:15000, retries:1, label:'rates-matrix'});
-
-        const results = Array.isArray(d?.results) ? d.results : [];
-        const rows = results.map(x=>{
-          const base = +x?.breakdown?.base || 0;
-          const perkg= +x?.breakdown?.perkg || 0;
-          const opts = +x?.breakdown?.opts || 0;
-          let total_incl = +x.total || 0;
-          if (!total_incl && (base||perkg||opts)) {
-            total_incl = Math.round((base+perkg+opts) * 115) / 115; // gross-up if ex-GST
-          }
-          return {
-            carrier: String(x.carrier_name || x.carrier || ''),
-            service: String(x.service_name  || x.service  || ''),
-            base: Math.round(base*115)/115,
-            fuel: 0, rural:0, saturday:0, signature:0, other: opts>0 ? Math.round(opts*115)/115 : 0,
-            total_incl
-          };
-        });
-
-        renderMatrix(rows);
-
-        // Seed easy cards from whatever we have (pref NZ Post)
-        const nzp = rows.filter(r=> r.carrier.toLowerCase().includes('post'));
-        const seed = (nzp.length ? nzp : rows).map(e=>({ service_name:e.service, service_code:e.service, total_price:e.total_incl }));
-        renderRatesEasy(seed);
-
-        log(`Matrix rates loaded: ${rows.length} row(s).`, 'ok');
-        if (!rows.length) log('No rates returned in matrix. Verify credentials or payload.', 'warn');
-      }catch(e){
-        if (tb) tb.innerHTML = `<tr><td colspan="9" class="psx-muted">Rate matrix lookup failed.</td></tr>`;
-        log(`Matrix rates error: ${e?.message||e}`, 'err');
-      }
-    }
-
-    function renderMatrix(rows){
-      const tb = $('#tblMatrix tbody'); if(!tb) return;
-      tb.innerHTML = '';
-      if (!rows.length){
-        tb.innerHTML = `<tr><td colspan="9" class="psx-muted">No rates</td></tr>`;
-        return;
-      }
-      rows.forEach(r=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${r.carrier || '—'}</td>
-          <td>${r.service || '—'}</td>
-          <td>${fmt$(r.base||0)}</td>
-          <td>${fmt$(r.fuel||0)}</td>
-          <td>${fmt$(r.rural||0)}</td>
-          <td>${fmt$(r.saturday||0)}</td>
-          <td>${fmt$(r.signature||0)}</td>
-          <td>${fmt$(r.other||0)}</td>
-          <td class="psx-right"><strong>${fmt$(r.total_incl||0)}</strong></td>`;
-        tb.appendChild(tr);
-      });
-
-      const facts = $('#psx-facts'); if (facts){
-        facts.innerHTML = '';
-        ['Residential','Saturday available','DG: no'].forEach(t=>{
-          const chip = document.createElement('span');
-          chip.className = 'fact';
-          chip.textContent = t;
-          facts.appendChild(chip);
-        });
-      }
-    }
-
-    // ---------------------------- Health ----------------------------
-    function setHealth(okNZP, okNZC){
-      const nzp = $('#psx-nzpost'); const nzc = $('#psx-nzc');
-      if (nzp) { nzp.textContent = okNZP ? 'LIVE' : 'DOWN'; nzp.style.color = okNZP ? '#16a34a' : '#ef4444'; }
-      if (nzc) { nzc.textContent = okNZC ? 'LIVE' : 'DOWN'; nzc.style.color = okNZC ? '#16a34a' : '#ef4444'; }
-    }
-    async function checkHealth(){
-      try{
-        const d = await fetchJSON(API.HEALTH, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}, {timeoutMs:8000, retries:1, label:'health'});
-        const okNZP = d?.checks?.nz_post === 'ENABLED';
-        const okNZC = d?.checks?.nzc     === 'ENABLED';
-        setHealth(okNZP, okNZC);
-        log(`Health: NZ Post=${okNZP?'ENABLED':'DISABLED'}, NZ Couriers=${okNZC?'ENABLED':'DISABLED'}`, okNZP||okNZC ? 'ok' : 'warn');
-        if (!okNZP || !okNZC) log('Missing credentials or configuration for one or more carriers. See Help/FAQ.', 'warn');
-      }catch(e){
-        setHealth(false,false);
-        log(`Health check failed: ${e?.message||e}`, 'err');
-      }
-    }
-
-    // ---------------------------- Actions ----------------------------
-    async function createLabel(){
-      if (!state.selection){
-        alert('Pick a service first');
-        log('Create Label blocked: no service selected.', 'warn');
-        return;
-      }
-      const pk = state.packages.map(p=>({ l_cm:num(p.l), w_cm:num(p.w), h_cm:num(p.h), weight_kg:num(p.kg), ref:'' }));
-      const body = {
-        transfer_id: TXID,
-        carrier: state.selection.carrier || 'nz_post',
-        service_code: state.selection.service || '',
-        packages: pk,
-        options: { signature: $('#optSig')?.checked, saturday: $('#optSat')?.checked, atl: $('#optATL')?.checked }
-      };
-
-      try{
-        // UX: disable while in flight
-        const btn = $('#btnCreateLabel'); if (btn) btn.disabled = true;
-        const d = await fetchJSON(API.CREATE_LABEL + '?debug=1', {
-          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }, {timeoutMs:15000, retries:1, label:'create-label'});
-
-        if (d && (d.success || d.ok)) {
-          alert('Label created.');
-          log('Create label: success.', 'ok');
-        } else {
-          const reason = d?.error || 'UNKNOWN';
-          alert('Create failed.');
-          log(`Create label: failed (${reason}).`, 'err');
-        }
-      }catch(e){
-        alert('Create failed.');
-        log(`Create label error: ${e?.message||e}`, 'err');
-      }finally{
-        const btn = $('#btnCreateLabel'); if (btn) btn.disabled = false;
-      }
-    }
-
-    function bindUI(){
-      // Tabs
-      $all('.psx-tab').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          $all('.psx-tab').forEach(x=> x.classList.remove('is-active'));
-          btn.classList.add('is-active');
-          state.mode = btn.dataset.mode;
-          const easy = $('#blkEasy'), pro = $('#blkPro');
-          if (state.mode==='easy'){ easy?.classList.remove('d-none'); pro?.classList.add('d-none'); }
-          else { easy?.classList.add('d-none'); pro?.classList.remove('d-none'); getRatesPro(); }
-        }, {passive:true});
-      });
-
-      // Packages
-      $('#psx-add')?.addEventListener('click', ()=>{ state.packages.push({name:'Box', w:30,l:40,h:20,kg:2.0,items:0,kind:'box'}); renderPackages(); }, {passive:true});
-      $('#psx-copy')?.addEventListener('click', ()=>{ if(state.packages.length){ state.packages.push({...state.packages[state.packages.length-1]}); renderPackages(); } }, {passive:true});
-      $('#psx-reset')?.addEventListener('click', ()=>{ state.packages=[]; renderPackages(); }, {passive:true});
-
-      // Rates
-      $('#btnGetRates')?.addEventListener('click', ()=> state.mode==='easy' ? getRatesEasy() : getRatesPro());
-
-      // CTAs
-      $('#btnPrintNow')?.addEventListener('click', ()=> window.print());
-      $('#btnCreateLabel')?.addEventListener('click', createLabel);
-      $('#btnPrintSlips')?.addEventListener('click', ()=> window.open('/modules/transfers/stock/print/box_slip.php?transfer='+TXID+'&preview=1&n='+Math.max(1,state.packages.length),'_blank'));
-      $('#btnReady')?.addEventListener('click', ()=> { alert('Marked Ready (UI)'); log('Marked Ready requested (client). Implement server action as needed.', 'info'); });
-      $('#btnCancel')?.addEventListener('click', ()=> { alert('Cancelled (UI)'); log('Cancel requested (client). Implement server action as needed.', 'info'); });
-      $('#btnReset')?.addEventListener('click', ()=>{ state.packages=[]; state.selection=null; renderPackages(); const r = $('#ratesList'); if(r) r.innerHTML=''; clearSelection(); });
-
-      // Help / FAQ focus
-      $('#psx-help')?.addEventListener('click', ()=> {
-        const el=$('#psx-faq'); if (!el) return;
-        el.scrollIntoView({behavior:'smooth',block:'center'});
-        el.classList.add('psx-flash'); setTimeout(()=>el.classList.remove('psx-flash'),800);
-      });
-
-      // Keyboard shortcuts
-      document.addEventListener('keydown', (e)=>{
-        const k = (e.key||'').toLowerCase();
-        if (k==='g'){ e.preventDefault(); state.mode==='easy' ? getRatesEasy() : getRatesPro(); }
-        if (k==='c'){ e.preventDefault(); createLabel(); }
-        if (k==='p'){ e.preventDefault(); window.print(); }
-        if (k==='r'){ e.preventDefault(); $('#btnReady')?.click(); }
-        if (e.ctrlKey && e.key==='Enter'){ e.preventDefault(); createLabel(); }
-      });
-
-      // Policy: B2B => disable R18, enforce Signature, disable ATL
-      (function enforceR18(){
-        const r18=$('#optAge'), sig=$('#optSig'), atl=$('#optATL');
-        if (r18){ r18.checked=false; r18.disabled=true; r18.title='R18 not applicable for B2B consignments'; }
-        if (sig) sig.checked = true;
-        if (atl) atl.checked = false;
-      })();
-    }
-
-    function boot(){
-      if (!TXID) {
-        log('TXID missing in DOM. The page will have limited functionality.', 'warn');
-      }
-      renderPackages();
-      bindUI();
-      checkHealth();
-
-      // Asset presence checks (optional)
-      const expected = [
-        '/assets/js/stock-transfers/transfers-common.js?v=1',
-        '/assets/js/stock-transfers/transfers-pack.js?v=1',
-        '/assets/js/stock-transfers/ship-ui.js?v=1'
-      ];
-      expected.forEach(src=>{
-        const ok = !!Array.from(document.scripts).find(s => (s.src||'').includes(src));
-        if (!ok) log(`Optional asset not loaded: ${src}`, 'warn');
-      });
-
-      log('Pack & Ship UI ready.', 'ok');
-    }
-
-    // Kick off
-    try { boot(); } catch (e){ log(`Boot failure: ${e?.message||e}`, 'err'); }
-  })();
-  </script>
-
-  <!-- Page-specific integration scripts -->
   <script src="/assets/js/stock-transfers/pack-draft-status.js?v=1" defer></script>
   <script src="/assets/js/stock-transfers/pack-product-search.js?v=1" defer></script>
-  <script src="/assets/js/stock-transfers/pack-ship-integration.js?v=1" defer></script>
-  <script src="/assets/js/shipping/courier-control-tower.js?v=1" type="module"></script>
 </body>
+
 </html>

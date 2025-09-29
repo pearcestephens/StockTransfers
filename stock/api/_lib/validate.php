@@ -13,18 +13,33 @@ function cis_env(string $key, ?string $default=null): ?string {
   return $v !== false ? $v : $default;
 }
 
-function cors_and_headers(): void {
+function cors_and_headers(array $options = []): void {
   $origins = array_filter(array_map('trim', explode(',', cis_env('CIS_CORS_ORIGINS', '*'))));
   $origin  = $_SERVER['HTTP_ORIGIN'] ?? '*';
   $allow   = in_array('*', $origins, true) ? '*' : (in_array($origin, $origins, true) ? $origin : 'null');
 
+  $allowHeaders = $options['allow_headers']
+    ?? 'Content-Type, X-API-Key, X-Transfer-ID, X-From-Outlet-ID, X-To-Outlet-ID, X_Transfer_ID, X_From_Outlet_ID, X_To_Outlet_ID, X-GSS-Token, X-GSS-Base, X-NZPost-Api-Key, X-NZPost-Subscription-Key, X-NZPost-Base';
+  $allowMethods = $options['allow_methods'] ?? 'GET, POST, OPTIONS';
+  $exposeHeaders = $options['expose_headers'] ?? null;
+  $maxAge = isset($options['max_age']) ? (int)$options['max_age'] : null;
+  $contentType = $options['content_type'] ?? 'application/json; charset=UTF-8';
+  $allowCredentials = array_key_exists('allow_credentials', $options) ? (bool)$options['allow_credentials'] : true;
+
   header('Access-Control-Allow-Origin: '.$allow);
   header('Vary: Origin');
-  header('Access-Control-Allow-Credentials: true');
-  // Added carrier auth headers here:
-  header('Access-Control-Allow-Headers: Content-Type, X-API-Key, X-Transfer-ID, X-From-Outlet-ID, X-To-Outlet-ID, X_Transfer_ID, X_From_Outlet_ID, X_To_Outlet_ID, X-GSS-Token, X-GSS-Base, X-NZPost-Api-Key, X-NZPost-Subscription-Key, X-NZPost-Base');
-  header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-  header('Content-Type: application/json; charset=UTF-8');
+  if ($allowCredentials) {
+    header('Access-Control-Allow-Credentials: true');
+  }
+  header('Access-Control-Allow-Headers: '.$allowHeaders);
+  header('Access-Control-Allow-Methods: '.$allowMethods);
+  if ($exposeHeaders) {
+    header('Access-Control-Expose-Headers: '.$exposeHeaders);
+  }
+  if ($maxAge !== null) {
+    header('Access-Control-Max-Age: '.$maxAge);
+  }
+  header('Content-Type: '.$contentType);
 }
 
 function handle_options_preflight(): void {
@@ -92,6 +107,10 @@ function read_json_body(int $maxBytes=1572864): array {
     exit;
   }
   return $data;
+}
+
+function json_input(?int $maxBytes=null): array {
+  return read_json_body($maxBytes ?? 1572864);
 }
 
 function sanitize_bool($v): bool { return filter_var($v, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false; }

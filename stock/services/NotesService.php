@@ -35,6 +35,26 @@ final class NotesService
         return $id;
     }
 
+    /**
+     * Retrieve transfer-level notes ordered chronologically (oldest first).
+     */
+    public function listTransferNotes(int $transferId): array
+    {
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT id, note_text, created_by, created_at
+                   FROM transfer_notes
+                  WHERE transfer_id = :tid
+                  ORDER BY created_at ASC, id ASC"
+            );
+            $stmt->execute(['tid' => $transferId]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            error_log('NotesService::listTransferNotes error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
     /** Shipment-level note (transfer_shipment_notes). */
     public function addShipmentNote(int $shipmentId, string $text, int $userId, ?int $transferId=null): int
     {
