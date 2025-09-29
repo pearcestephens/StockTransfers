@@ -55,8 +55,8 @@ $opt  = (array)($in['options'] ?? []);
 $facts= (array)($in['address_facts'] ?? []);
 
 $transferId   = (int)($meta['transfer_id']   ?? 0);
-$fromOutletId = (int)($meta['from_outlet_id']?? 0);
-$toOutletId   = (int)($meta['to_outlet_id']  ?? 0);
+$fromOutletId = (string)($meta['from_outlet_id']?? '');
+$toOutletId   = (string)($meta['to_outlet_id']  ?? '');
 
 $carrier      = (string)($sel['carrier']      ?? '');
 $serviceCode  = (string)($sel['service_code'] ?? '');

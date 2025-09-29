@@ -29,8 +29,8 @@ try {
   $opt     = (array)($in['options'] ?? []);
   $facts   = (array)($in['address_facts'] ?? []);
   $allow   = (array)($in['carriers_enabled'] ?? []);
-  $fromOutletId = (int)($meta['from_outlet_id'] ?? 0);
-  $toOutletId   = (int)($meta['to_outlet_id']   ?? 0);
+  $fromOutletId = (string)($meta['from_outlet_id'] ?? '');
+  $toOutletId   = (string)($meta['to_outlet_id']   ?? '');
 
   if (!$fromOutletId) fail('MISSING_PARAM','meta.from_outlet_id required');
   if (!$toOutletId)   fail('MISSING_PARAM','meta.to_outlet_id required');

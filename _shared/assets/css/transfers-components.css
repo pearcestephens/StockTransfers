@@ -1,0 +1,246 @@
+/* ==========================================================================
+   Transfers — Component Library Styles
+   Shared styles for modular view components
+   ========================================================================== */
+
+/* ===== COMPONENT BASE STYLES ===== */
+
+/* Breadcrumb Component */
+.tfx-breadcrumb {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tfx-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
+  color: var(--text-muted);
+}
+
+/* Status Alert Component */
+.tfx-status-alert {
+  border-radius: var(--border-radius-md);
+  border-left: 4px solid var(--primary);
+  background: var(--background-light);
+  padding: var(--spacing-md);
+}
+
+.tfx-status-alert--warning {
+  border-left-color: var(--warning);
+}
+
+.tfx-status-alert--success {
+  border-left-color: var(--success);
+}
+
+.tfx-status-alert--danger {
+  border-left-color: var(--danger);
+}
+
+.pack-alert-icon {
+  font-size: 1.4rem;
+  padding-top: 2px;
+}
+
+.pack-alert-title {
+  font-weight: 600;
+}
+
+/* Product Search Component */
+.tfx-product-search {
+  background: var(--white);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.tfx-product-search__header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tfx-product-search__body {
+  padding: var(--spacing-md);
+}
+
+.tfx-product-cell {
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-light);
+  transition: background-color 0.2s ease;
+}
+
+.tfx-product-cell:hover {
+  background-color: var(--background-hover);
+}
+
+.tfx-product-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.tfx-product-sku {
+  font-size: 0.85em;
+  margin-top: 2px;
+}
+
+/* Transfer Header Component */
+.tfx-transfer-header {
+  background: var(--background-light);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.draft-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  border: 1px solid;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: default;
+  transition: all 0.2s ease;
+}
+
+.draft-status-pill .pill-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s infinite;
+}
+
+.draft-status-pill.status-idle {
+  color: #6c757d;
+  background: #f8f9fa;
+  border-color: #dee2e6;
+}
+
+.draft-status-pill.status-saving {
+  color: #fd7e14;
+  background: #fff3cd;
+  border-color: #ffeaa7;
+}
+
+.draft-status-pill.status-saved {
+  color: #28a745;
+  background: #d1e7dd;
+  border-color: #badbcc;
+}
+
+.draft-status-pill.status-error {
+  color: #dc3545;
+  background: #f8d7da;
+  border-color: #f5c2c7;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Items Table Component */
+.tfx-items-table {
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.tfx-items-table .table {
+  margin-bottom: 0;
+}
+
+.tfx-items-table thead th {
+  background-color: var(--background-light);
+  border-bottom: 2px solid var(--border-light);
+  font-weight: 600;
+}
+
+.tfx-card-tight .card-body {
+  padding: 0.75rem;
+}
+
+.tfx-remove-btn {
+  background: none;
+  border: none;
+  color: #dc3545;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.tfx-remove-btn:hover {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.tfx-num {
+  max-width: 80px;
+  text-align: center;
+}
+
+.counted-td {
+  position: relative;
+}
+
+.counted-print-value {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: bold;
+  color: #28a745;
+  pointer-events: none;
+}
+
+/* Pack & Ship Console Component */
+.tfx-pack-console {
+  background: var(--white);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.tfx-pack-console__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tfx-pack-console__body {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.tfx-pack-console__actions {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Utility Classes for Components */
+.gap-12px { gap: 12px; }
+.gap-10px { gap: 10px; }
+.gap-8px { gap: 8px; }
+.gap-6px { gap: 6px; }
+
+/* Responsive Component Adjustments */
+@media (max-width: 768px) {
+  .tfx-product-search .btn-group {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .tfx-transfer-header .btn-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .draft-status-pill {
+    font-size: 0.8rem;
+    padding: 3px 10px;
+  }
+}

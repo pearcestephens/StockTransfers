@@ -843,7 +843,7 @@ try {
     }
 
     // Resolve outlet for credentials
-    $outletFromId = 0;
+    $outletFromId = '';
 
     // Prefer transfer_id -> transfers.outlet_from
     $transferIdIn = (int)($data['transfer_id'] ?? 0);
@@ -854,7 +854,7 @@ try {
             $st->execute(['id' => $transferIdIn]);
             $row = $st->fetch(PDO::FETCH_ASSOC);
             if ($row && isset($row['outlet_from'])) {
-                $outletFromId = (int)$row['outlet_from'];
+                $outletFromId = (string)$row['outlet_from'];
                 pack_ship_log("Resolved outlet_from via transfer {$transferIdIn}: {$outletFromId}");
             }
         } catch (Throwable $e) {
@@ -863,16 +863,16 @@ try {
     }
 
     // Fallback: direct outlet_from_id
-    if ($outletFromId <= 0) {
-        $outletFromId = (int)($data['outlet_from_id'] ?? 0);
-        if ($outletFromId > 0) {
+    if (empty($outletFromId)) {
+        $outletFromId = (string)($data['outlet_from_id'] ?? '');
+        if (!empty($outletFromId)) {
             pack_ship_log("Using direct outlet_from_id: {$outletFromId}");
         }
     }
 
     // Load config
-    $CONFIG = $outletFromId > 0 ? pack_ship_get_outlet_config($outletFromId) : pack_ship_get_default_config();
-    if ($outletFromId <= 0) {
+    $CONFIG = !empty($outletFromId) ? pack_ship_get_outlet_config($outletFromId) : pack_ship_get_default_config();
+    if (empty($outletFromId)) {
         pack_ship_log('No outlet specified, using default config');
     }
 

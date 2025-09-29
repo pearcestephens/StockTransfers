@@ -139,8 +139,8 @@ function nzc_quote(array $ctx, string $container, array $parcels, array $options
 
   $payload = [
     "container" => $container,
-    "from"      => ["outlet_id" => (int)($ctx['from_outlet_id'] ?? 0)],
-    "to"        => ["outlet_id" => (int)($ctx['to_outlet_id'] ?? 0)],
+    "from"      => ["outlet_id" => (string)($ctx['from_outlet_id'] ?? '')],
+    "to"        => ["outlet_id" => (string)($ctx['to_outlet_id'] ?? '')],
     "parcels"   => $parcels,
     "options"   => [
       "signature" => !empty($options['sig']),
@@ -181,8 +181,8 @@ function nzc_create(array $ctx, array $sel, array $parcels, array $options, arra
     ],
     "meta" => [
       "transfer_id" => $transfer,
-      "from_outlet" => (int)($ctx['from_outlet_id'] ?? 0),
-      "to_outlet"   => (int)($ctx['to_outlet_id'] ?? 0),
+      "from_outlet" => (string)($ctx['from_outlet_id'] ?? ''),
+      "to_outlet"   => (string)($ctx['to_outlet_id'] ?? ''),
     ],
   ];
 

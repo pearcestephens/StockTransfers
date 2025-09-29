@@ -198,6 +198,79 @@ class AssetLoader
     }
 
     /**
+     * Load shared assets from _shared/assets/ directory
+     */
+    public function loadSharedAssets(
+        string $sharedBasePath = null,
+        array $cssExclusions = [],
+        array $jsExclusions = [],
+        bool $jsDefer = true
+    ): string {
+        $sharedPath = $sharedBasePath ?: realpath(__DIR__ . '/../assets');
+        
+        if (!$sharedPath || !is_dir($sharedPath)) {
+            return "<!-- Shared assets directory not found: {$sharedPath} -->\n";
+        }
+
+        // Create temporary instance for shared assets
+        $sharedLoader = new self(
+            basePath: $sharedPath,
+            baseUrl: '/modules/transfers/_shared/assets/',
+            cssExclusions: $cssExclusions,
+            jsExclusions: $jsExclusions,
+            useFileMtimeVersioning: $this->useFileMtimeVersioning
+        );
+
+        $output = '';
+        $output .= $sharedLoader->loadCSS('css', $cssExclusions);
+        $output .= $sharedLoader->loadJS('js', $jsExclusions, $jsDefer);
+        return $output;
+    }
+
+    /**
+     * Load shared + module assets in proper order
+     * Shared assets load first (foundation), then module-specific assets
+     */
+    public function loadSharedAndModule(
+        string $moduleCssDirectory = 'assets/css',
+        string $moduleJsDirectory = 'assets/js',
+        string $sharedBasePath = null,
+        array $sharedCssExclusions = [],
+        array $sharedJsExclusions = [],
+        array $moduleCssExclusions = [],
+        array $moduleJsExclusions = [],
+        bool $jsDefer = true
+    ): string {
+        $output = '';
+        
+        // 1. Load shared CSS first (foundation styles)
+        $output .= "<!-- =============\n     SHARED ASSETS\n     ============= -->\n";
+        $output .= $this->loadSharedAssets($sharedBasePath, $sharedCssExclusions, [], false);
+        
+        // 2. Load module-specific CSS (overrides/extensions)
+        $output .= "<!-- =============\n     MODULE ASSETS\n     ============= -->\n";
+        $output .= $this->loadCSS($moduleCssDirectory, $moduleCssExclusions);
+        
+        // 3. Load shared JS
+        $sharedPath = $sharedBasePath ?: realpath(__DIR__ . '/../assets');
+        if ($sharedPath && is_dir($sharedPath)) {
+            $sharedLoader = new self(
+                basePath: $sharedPath,
+                baseUrl: '/modules/transfers/_shared/assets/',
+                cssExclusions: [],
+                jsExclusions: $sharedJsExclusions,
+                useFileMtimeVersioning: $this->useFileMtimeVersioning
+            );
+            $output .= $sharedLoader->loadJS('js', $sharedJsExclusions, $jsDefer);
+        }
+        
+        // 4. Load module-specific JS (depends on shared utilities)
+        $output .= $this->loadJS($moduleJsDirectory, $moduleJsExclusions, $jsDefer);
+        
+        return $output;
+    }
+
+    /**
      * Create a pre-configured instance for stock transfers
      */
     public static function forStockTransfers(string $basePath = null): self
@@ -216,6 +289,31 @@ class AssetLoader
             cssExclusions: [], // Could exclude development/test files
             jsExclusions: [],  // Could exclude development/test files
             useFileMtimeVersioning: true
+        );
+    }
+
+    /**
+     * Create instance with shared + module loading configured
+     */
+    public static function forStockWithShared(string $modulePath = null, string $sharedPath = null): self
+    {
+        $loader = self::forStockTransfers($modulePath);
+        return $loader;
+    }
+
+    /**
+     * Quick helper for loading shared + module assets together
+     */
+    public static function loadStockWithShared(
+        string $modulePath = null, 
+        string $sharedPath = null,
+        array $moduleExclusions = []
+    ): string {
+        $loader = self::forStockWithShared($modulePath, $sharedPath);
+        return $loader->loadSharedAndModule(
+            moduleCssExclusions: $moduleExclusions['css'] ?? [],
+            moduleJsExclusions: $moduleExclusions['js'] ?? [],
+            sharedBasePath: $sharedPath
         );
     }
 }

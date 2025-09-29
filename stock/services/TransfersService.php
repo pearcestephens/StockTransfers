@@ -79,7 +79,7 @@ final class TransfersService
                 $transfer['outlet_from_name'] = $fromMeta['name'] ?? '';
             }
             if ($fromLegacy === 0 && !empty($fromMeta['website_outlet_id'])) {
-                $transfer['outlet_from'] = (int)$fromMeta['website_outlet_id'];
+                $transfer['outlet_from'] = $fromMeta['website_outlet_id'];
             }
         }
 
@@ -90,7 +90,7 @@ final class TransfersService
                 $transfer['outlet_to_name'] = $toMeta['name'] ?? '';
             }
             if ($toLegacy === 0 && !empty($toMeta['website_outlet_id'])) {
-                $transfer['outlet_to'] = (int)$toMeta['website_outlet_id'];
+                $transfer['outlet_to'] = $toMeta['website_outlet_id'];
             }
         }
 
@@ -128,13 +128,14 @@ final class TransfersService
 
     /**
      * Return quantity on hand for product IDs at a specific outlet.
-     * @param array<int,int> $productIds
-     * @return array<int,int> product_id => qty
+     * @param array<int|string> $productIds
+     * @param string $outletId UUID of the outlet
+     * @return array<string,int> product_id => qty
      */
-    public function getSourceStockLevels(array $productIds, int $outletId): array
+    public function getSourceStockLevels(array $productIds, string $outletId): array
     {
-        $ids = array_values(array_unique(array_map(static fn($id) => (int)$id, $productIds)));
-        if (!$ids || $outletId <= 0) {
+        $ids = array_values(array_unique(array_map(static fn($id) => (string)$id, $productIds)));
+        if (!$ids || empty($outletId) || strlen($outletId) < 5) {
             return [];
         }
 
@@ -175,9 +176,9 @@ final class TransfersService
 
         $stmt = $this->db->prepare($sql);
         $bindIndex = 1;
-        $stmt->bindValue($bindIndex++, $outletId, PDO::PARAM_INT);
+        $stmt->bindValue($bindIndex++, $outletId, PDO::PARAM_STR);
         foreach ($ids as $pid) {
-            $stmt->bindValue($bindIndex++, $pid, PDO::PARAM_INT);
+            $stmt->bindValue($bindIndex++, $pid, PDO::PARAM_STR);
         }
 
         try {
@@ -189,9 +190,11 @@ final class TransfersService
 
         $map = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $pid = (int)($row['product_id'] ?? 0);
+            $pid = (string)($row['product_id'] ?? '');
             $qty = isset($row['qty']) ? (float)$row['qty'] : 0.0;
-            $map[$pid] = (int)round($qty);
+            if ($pid !== '') {
+                $map[$pid] = (int)round($qty);
+            }
         }
         return $map;
     }
@@ -211,9 +214,13 @@ final class TransfersService
             if ($candidate === '') {
                 return null;
             }
-            $uuid = $candidate;
-            if (ctype_digit($candidate)) {
+            // Check if it's a UUID format (contains hyphens) or just digits
+            if (strpos($candidate, '-') !== false) {
+                $uuid = $candidate;
+            } elseif (ctype_digit($candidate)) {
                 $legacyId = (int)$candidate;
+            } else {
+                $uuid = $candidate;
             }
         }
 
@@ -266,7 +273,7 @@ final class TransfersService
         }
 
         $row['id'] = (string)($row['id'] ?? '');
-        $row['website_outlet_id'] = isset($row['website_outlet_id']) ? (int)$row['website_outlet_id'] : 0;
+        $row['website_outlet_id'] = isset($row['website_outlet_id']) ? (string)$row['website_outlet_id'] : '';
         $row['company'] = 'The Vape Shed';
 
         $countryCode = strtoupper(trim((string)($row['country_code'] ?? '')));

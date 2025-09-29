@@ -1,0 +1,155 @@
+/* ==========================================================================
+   Transfers — CSS Custom Properties & Variables
+   Centralized theming and design tokens for all transfer components
+   ========================================================================== */
+
+:root {
+  /* ===== BRAND COLORS ===== */
+  --tfx-primary: #007bff;
+  --tfx-secondary: #6c757d;
+  --tfx-success: #28a745;
+  --tfx-warning: #fd7e14;
+  --tfx-danger: #dc3545;
+  --tfx-info: #17a2b8;
+  --tfx-light: #f8f9fa;
+  --tfx-dark: #343a40;
+
+  /* ===== NEUTRAL COLORS ===== */
+  --tfx-white: #ffffff;
+  --tfx-gray-50: #f9fafb;
+  --tfx-gray-100: #f3f4f6;
+  --tfx-gray-200: #e5e7eb;
+  --tfx-gray-300: #d1d5db;
+  --tfx-gray-400: #9ca3af;
+  --tfx-gray-500: #6b7280;
+  --tfx-gray-600: #4b5563;
+  --tfx-gray-700: #374151;
+  --tfx-gray-800: #1f2937;
+  --tfx-gray-900: #111827;
+
+  /* ===== SEMANTIC COLORS ===== */
+  --tfx-muted: var(--tfx-gray-500);
+  --tfx-border: #dee2e6;
+  --tfx-border-light: var(--tfx-gray-200);
+  --tfx-text-muted: var(--tfx-gray-500);
+  --tfx-bg-light: var(--tfx-gray-50);
+
+  /* ===== SPACING ===== */
+  --tfx-spacing-xs: 0.25rem;   /* 4px */
+  --tfx-spacing-sm: 0.5rem;    /* 8px */
+  --tfx-spacing-md: 1rem;      /* 16px */
+  --tfx-spacing-lg: 1.5rem;    /* 24px */
+  --tfx-spacing-xl: 2rem;      /* 32px */
+  --tfx-spacing-2xl: 3rem;     /* 48px */
+
+  /* ===== TYPOGRAPHY ===== */
+  --tfx-font-size-xs: 0.75rem;     /* 12px */
+  --tfx-font-size-sm: 0.875rem;    /* 14px */
+  --tfx-font-size-base: 1rem;      /* 16px */
+  --tfx-font-size-lg: 1.125rem;    /* 18px */
+  --tfx-font-size-xl: 1.25rem;     /* 20px */
+  --tfx-font-size-2xl: 1.5rem;     /* 24px */
+
+  --tfx-font-weight-normal: 400;
+  --tfx-font-weight-medium: 500;
+  --tfx-font-weight-semibold: 600;
+  --tfx-font-weight-bold: 700;
+
+  --tfx-line-height-tight: 1.25;
+  --tfx-line-height-normal: 1.5;
+  --tfx-line-height-relaxed: 1.75;
+
+  /* ===== BORDERS & RADIUS ===== */
+  --tfx-border-width: 1px;
+  --tfx-border-radius-sm: 0.25rem;   /* 4px */
+  --tfx-border-radius: 0.375rem;     /* 6px */
+  --tfx-border-radius-md: 0.5rem;    /* 8px */
+  --tfx-border-radius-lg: 0.75rem;   /* 12px */
+  --tfx-border-radius-xl: 1rem;      /* 16px */
+  --tfx-border-radius-2xl: 1.5rem;   /* 24px */
+  --tfx-border-radius-full: 9999px;
+
+  /* ===== SHADOWS ===== */
+  --tfx-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --tfx-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --tfx-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --tfx-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* ===== TRANSITIONS ===== */
+  --tfx-transition-fast: 150ms ease;
+  --tfx-transition-base: 200ms ease;
+  --tfx-transition-slow: 300ms ease;
+
+  /* ===== Z-INDEX LAYERS ===== */
+  --tfx-z-dropdown: 1000;
+  --tfx-z-sticky: 1020;
+  --tfx-z-fixed: 1030;
+  --tfx-z-modal-backdrop: 1040;
+  --tfx-z-modal: 1050;
+  --tfx-z-popover: 1060;
+  --tfx-z-tooltip: 1070;
+
+  /* ===== COMPONENT-SPECIFIC VARIABLES ===== */
+  
+  /* Draft Status Pills */
+  --tfx-pill-padding: 0.25rem 0.75rem;
+  --tfx-pill-radius: var(--tfx-border-radius-2xl);
+  --tfx-pill-font-size: var(--tfx-font-size-sm);
+  --tfx-pill-font-weight: var(--tfx-font-weight-medium);
+
+  /* Pack Console Theme (Dark Mode) */
+  --psx-bg: #0f172a;
+  --psx-panel: #0b1224;
+  --psx-fg: #e5e7eb;
+  --psx-sub: #9aa4b2;
+  --psx-border: #1f2937;
+  --psx-hover: #374151;
+  --psx-accent: #3b82f6;
+
+  /* Table & Form Controls */
+  --tfx-input-border: var(--tfx-border);
+  --tfx-input-border-focus: var(--tfx-primary);
+  --tfx-input-radius: var(--tfx-border-radius);
+  --tfx-input-padding: 0.375rem 0.75rem;
+
+  /* Cards & Containers */
+  --tfx-card-bg: var(--tfx-white);
+  --tfx-card-border: var(--tfx-border);
+  --tfx-card-radius: var(--tfx-border-radius-lg);
+  --tfx-card-shadow: var(--tfx-shadow-sm);
+  --tfx-card-padding: var(--tfx-spacing-lg);
+
+  /* Buttons */
+  --tfx-btn-padding: 0.375rem 0.75rem;
+  --tfx-btn-radius: var(--tfx-border-radius);
+  --tfx-btn-font-size: var(--tfx-font-size-sm);
+  --tfx-btn-font-weight: var(--tfx-font-weight-medium);
+  --tfx-btn-transition: var(--tfx-transition-base);
+}
+
+/* ===== DARK MODE OVERRIDES ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tfx-white: var(--tfx-gray-900);
+    --tfx-card-bg: var(--tfx-gray-800);
+    --tfx-border: var(--tfx-gray-700);
+    --tfx-border-light: var(--tfx-gray-600);
+    --tfx-text-muted: var(--tfx-gray-400);
+    --tfx-bg-light: var(--tfx-gray-800);
+  }
+}
+
+/* ===== COMPONENT SIZE VARIATIONS ===== */
+:root {
+  /* Small variants */
+  --tfx-btn-sm-padding: 0.25rem 0.5rem;
+  --tfx-btn-sm-font-size: var(--tfx-font-size-xs);
+  --tfx-input-sm-padding: 0.25rem 0.5rem;
+  --tfx-input-sm-font-size: var(--tfx-font-size-sm);
+
+  /* Large variants */
+  --tfx-btn-lg-padding: 0.75rem 1.5rem;
+  --tfx-btn-lg-font-size: var(--tfx-font-size-lg);
+  --tfx-input-lg-padding: 0.75rem 1rem;
+  --tfx-input-lg-font-size: var(--tfx-font-size-lg);
+}

@@ -255,8 +255,8 @@ $ENDPOINTS = [
   <script>
   window.DISPATCH_BOOT = {
     transferId: <?= (int)$transferId ?>,
-    fromOutletId: <?= (int)$fromOutletId ?>,
-    toOutletId: <?= (int)$toOutletId ?>,
+    fromOutletId: <?= json_encode($fromOutletId) ?>,
+    toOutletId: <?= json_encode($toOutletId) ?>,
     fromOutlet: <?= json_encode($fromOutlet) ?>,
     toOutlet: <?= json_encode($toOutlet) ?>,
     fromLine: <?= json_encode($fromLine) ?>,

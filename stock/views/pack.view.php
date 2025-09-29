@@ -105,20 +105,19 @@ $sourceStockMap = $sourceStockMap ?? [];
             ['label' => 'Diff', 'id' => 'diffTotal', 'value' => '0']
           ]
         ];
-        include __DIR__ . '/components/transfer-header.php';
-        ?>
 
-        <?php
-        // Items table
-        $table_config = [
+        // Combined unified view (header + table together)
+        $unified_config = array_merge($header_config, [
           'items' => $items,
-          'transfer_id' => $txId,
           'destination_label' => $toLbl,
           'source_stock_map' => $sourceStockMap,
-          'show_actions' => true,
-          'empty_message' => 'No items on this transfer.'
-        ];
-        include __DIR__ . '/components/items-table.php';
+          'draft_status' => [
+            'state' => 'idle',
+            'text' => 'IDLE',
+            'last_saved' => 'Last saved: Last saved: 8:48:43 PM'
+          ]
+        ]);
+        include __DIR__ . '/components/pack-transfer-unified.php';
         ?>
 
         <?php
