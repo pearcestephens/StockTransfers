@@ -1,5 +1,11 @@
 <?php
-declare(strict_types=1);
+decluse Modules\\Transfers\\Stock\\Shared\\Services\\PackSendRequest as PackSendRequestDto;
+use Modules\\Transfers\\Stock\\Shared\\Util\\Uuid;
+
+require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
+require_once __DIR__ . '/../_shared/Bootstrap.php';
+
+use function Modules\\Transfers\\Stock\\Shared\\pack_send_orchestrator;ict_types=1);
 /**
  * File: pack_send.php
  * Purpose: HTTP endpoint for pack/send orchestration
@@ -8,13 +14,13 @@ declare(strict_types=1);
  * Dependencies: app.php, _shared Bootstrap stack
  */
 
-use Modules\Transfers\Stock\Shared\Services\PackSendRequest as PackSendRequestDto;
-use Modules\Transfers\Stock\Shared\Util\Uuid;
+use Modules\Transfers\Shared\Services\PackSendRequest as PackSendRequestDto;
+use Modules\Transfers\Shared\Util\Uuid;
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
 require_once __DIR__ . '/../_shared/Bootstrap.php';
 
-use function Modules\Transfers\Stock\Shared\pack_send_orchestrator;
+use function Modules\Transfers\Shared\pack_send_orchestrator;
 
 header('Content-Type: application/json; charset=utf-8');
 

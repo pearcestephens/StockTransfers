@@ -8,11 +8,11 @@ declare(strict_types=1);
  * Dependencies: RequestValidatorImpl, GuardianService, ParcelPlannerDb, HandlerFactoryImpl, PersistenceStock, VendServiceImpl, IdempotencyStoreDb, AuditLoggerDb
  */
 
-namespace Modules\Transfers\Stock\Shared\Services;
+namespace Modules\Transfers\Shared\Services;
 
-use Modules\Transfers\Stock\Shared\Handlers\HandlerFactoryImpl;
-use Modules\Transfers\Stock\Shared\Handlers\HandlerInterface;
-use Modules\Transfers\Stock\Shared\Util\Json;
+use Modules\Transfers\Shared\Handlers\HandlerFactoryImpl;
+use Modules\Transfers\Shared\Handlers\HandlerInterface;
+use Modules\Transfers\Shared\Util\Json;
 use Throwable;
 
 final class OrchestratorImpl

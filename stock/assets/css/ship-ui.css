@@ -1,0 +1,74 @@
+/* ==========================================================================
+   Transfers — Common UI (shared across Pack/Receive)
+   ========================================================================== */
+
+:root {
+  /* tfx */
+  --tfx-muted:#6c757d;
+  --tfx-success:#28a745;
+  --tfx-warning:#fd7e14;
+  --tfx-danger:#dc3545;
+  --tfx-info:#17a2b8;
+  --tfx-light:#f8f9fa;
+  --tfx-border:#dee2e6;
+
+  /* pack-bottom theme */
+  --pb-bg:#0f172a;
+  --pb-panel:#0b1224;
+  --pb-fg:#e5e7eb;
+  --pb-sub:#9aa4b2;
+  --pb-border:#1f2937;
+  --pb-chip:#111827;
+  --pb-green:#22c55e;
+  --pb-amber:#f59e0b;
+  --pb-red:#ef4444;
+  --pb-primary:#2563eb;
+  --pb-outline:#475569;
+}
+
+/* Generic card/table spacing fixes */
+.tfx-card-tight .card-body { padding:.75rem 1rem; }
+
+/* Address summary blocks (used by courier panels) */
+.address-summary {
+  background:#f8f9fa;
+  border-left:4px solid var(--tfx-info);
+  border-radius:.25rem;
+}
+
+/* Pack bottom panel */
+.pack-bottom{ margin:16px 0 24px; }
+.pb-grid{ display:grid; gap:16px; grid-template-columns:1fr 1fr; }
+.pb-card{
+  background:linear-gradient(180deg,var(--pb-panel),#0e162d 60%);
+  color:var(--pb-fg);
+  border:1px solid var(--pb-border);
+  border-radius:12px; overflow:hidden;
+  box-shadow:0 8px 26px rgba(0,0,0,.35);
+}
+.pb-card__head{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--pb-border); }
+.pb-title{ font-weight:800; letter-spacing:.2px; }
+.pb-sub{ color:var(--pb-sub); font-size:.92rem; }
+.pb-card__body{ padding:14px 16px; }
+.pb-card__foot{ padding:14px 16px; border-top:1px solid var(--pb-border); display:flex; justify-content:flex-end; }
+
+/* inputs & buttons */
+.pb-fieldrow{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.pb-label{ min-width:160px; color:var(--pb-sub); }
+.pb-inputgroup{ display:inline-flex; border:1px solid var(--pb-border); border-radius:10px; overflow:hidden; }
+.pb-input{ width:90px; text-align:center; background:#0b1327; color:var(--pb-fg); border:none; outline:none; padding:8px 6px; }
+.pb-step{ width:34px; background:#0b1327; color:#cbd5e1; border:none; outline:none; cursor:pointer; }
+.pb-step:hover{ background:#0f1935; }
+.pb-actions{ display:flex; gap:8px; }
+.btn{ border:1px solid transparent; padding:9px 14px; border-radius:10px; cursor:pointer; font-weight:700; }
+.btn-primary{ background:var(--pb-primary); color:#fff; }
+.btn-outline{ background:transparent; border-color:var(--pb-outline); color:#d1d5db; }
+.btn-success{ background:var(--pb-green); color:#000; }
+
+.pb-hint{ color:var(--pb-sub); font-size:.85rem; margin-top:10px; }
+
+/* ready panel */
+.pb-ready .pb-card__head{ display:flex; gap:14px; }
+.pb-status{ align-items:center; } /* display is inherited where used */
+.pb-traffic{ display:flex; gap:8px }
+

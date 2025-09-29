@@ -1,0 +1,6 @@
+/* ==========================================================================
+   Transfers — RECEIVE view tweaks
+   ========================================================================== */
+
+#receive-table td, #receive-table th { vertical-align: middle; }
+#receive-table .rem { font-weight: 600; }

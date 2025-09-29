@@ -1,0 +1,38 @@
+/* ship-ui-variant-neon.css  (Variant A: Neon Edge)
+   Purpose: Apply high-contrast aurora gradient accent styling to the unified Shipping & Print wizard
+   Safe: Only scopes under #ship-wizard.sw--variant-neon-edge so it will not leak to other pages
+*/
+#ship-wizard.sw--variant-neon-edge { --aurora:linear-gradient(135deg,#ff5bd3 0%,#b07dff 28%,#6aa8ff 58%,#36e6a1 100%); --aurora-soft:linear-gradient(135deg,rgba(255,91,211,.08),rgba(176,125,255,.08),rgba(106,168,255,.08),rgba(54,230,161,.08)); }
+#ship-wizard.sw--variant-neon-edge .sw__head { position:relative; background:linear-gradient(180deg,#ffffff,#fafbff); }
+#ship-wizard.sw--variant-neon-edge .sw__head:after { content:""; position:absolute; inset:auto 12px -6px 12px; height:6px; border-radius:999px; background:var(--aurora); filter:blur(8px); opacity:.9; }
+#ship-wizard.sw--variant-neon-edge .sw__logo { background:var(--aurora); box-shadow:0 2px 0 rgba(0,0,0,.08) inset,0 0 0 1px rgba(255,255,255,.75) inset; }
+#ship-wizard.sw--variant-neon-edge .sw__title { background:var(--aurora); -webkit-background-clip:text; color:transparent; font-weight:800; letter-spacing:.3px; }
+#ship-wizard.sw--variant-neon-edge .sw__status { background:var(--aurora-soft); }
+#ship-wizard.sw--variant-neon-edge .sw__chip { border:1px solid rgba(0,0,0,.04); background:#fff; }
+#ship-wizard.sw--variant-neon-edge .sw__chip--info { background:#eef2ff; }
+#ship-wizard.sw--variant-neon-edge .sw__chip--primary { background:#ecfdf5; }
+#ship-wizard.sw--variant-neon-edge .sw__modebtn.is-active { background:var(--aurora); border-color:transparent; box-shadow:0 0 0 2px rgba(255,255,255,.6),0 0 0 4px rgba(111,131,255,.35); font-weight:700; }
+#ship-wizard.sw--variant-neon-edge .sw__modebtn { background:#fff; }
+#ship-wizard.sw--variant-neon-edge .sw__summary { background:linear-gradient(#fff,#f6f9ff); box-shadow:0 6px 18px rgba(19,25,46,.05); }
+#ship-wizard.sw--variant-neon-edge .sw__buttons .btn-primary, 
+#ship-wizard.sw--variant-neon-edge .sw__buttons .btn-success { background:var(--aurora); border:0; font-weight:700; }
+#ship-wizard.sw--variant-neon-edge .sw__buttons .btn-outline-secondary { border-color:#d6d8e2; }
+#ship-wizard.sw--variant-neon-edge .sw__rates { background:#fff; box-shadow:0 4px 14px rgba(20,24,40,.06); }
+#ship-wizard.sw--variant-neon-edge .sw__override { background:#fffaf4; }
+#ship-wizard.sw--variant-neon-edge .sw__notes, 
+#ship-wizard.sw--variant-neon-edge .sw__manual { background:#f2f6ff; }
+#ship-wizard.sw--variant-neon-edge .sw-rate-delta-up { color:#067647; }
+#ship-wizard.sw--variant-neon-edge .sw-rate-delta-down { color:#b91c1c; }
+#ship-wizard.sw--variant-neon-edge .sw__row + .sw__row { border-top:1px dashed #e6e9f2; }
+#ship-wizard.sw--variant-neon-edge .sw__row { padding:4px 0; }
+#ship-wizard.sw--variant-neon-edge .sw__table thead th { text-transform:uppercase; font-size:11px; letter-spacing:.5px; }
+#ship-wizard.sw--variant-neon-edge .sw__table tbody td { vertical-align:middle; }
+#ship-wizard.sw--variant-neon-edge .sw__table tbody tr:hover { background:#f8faff; }
+#ship-wizard.sw--variant-neon-edge .sw__actions .btn { background:#fff; }
+#ship-wizard.sw--variant-neon-edge .sw__actions .btn.btn-outline-danger { background:#fff3f5; }
+#ship-wizard.sw--variant-neon-edge .sw__buttons .btn-primary:hover, 
+#ship-wizard.sw--variant-neon-edge .sw__buttons .btn-success:hover { filter:brightness(1.05); }
+#ship-wizard.sw--variant-neon-edge input:focus-visible, 
+#ship-wizard.sw--variant-neon-edge select:focus-visible { outline:2px solid #b07dff; outline-offset:1px; box-shadow:0 0 0 3px rgba(176,125,255,.25); }
+/* Reduced motion respect */
+@media (prefers-reduced-motion: reduce){ #ship-wizard.sw--variant-neon-edge .sw__head:after { filter:none; } }

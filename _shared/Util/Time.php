@@ -8,7 +8,7 @@ declare(strict_types=1);
  * Dependencies: PHP 8.1+
  */
 
-namespace Modules\Transfers\Stock\Shared\Util;
+namespace Modules\Transfers\Shared\Util;
 
 use DateTimeImmutable;
 use DateTimeZone;

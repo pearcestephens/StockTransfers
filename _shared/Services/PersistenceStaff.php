@@ -1,28 +1,21 @@
 <?php
 declare(strict_types=1);
+/**
+ * File: PersistenceStaff.php
+ * Purpose: Stub for staff persistence branch
+ * Author: GitHub Copilot
+ * Last Modified: 2025-09-29
+ * Dependencies: none
+ */
 
-namespace CIS\Shared\Services;
+namespace Modules\Transfers\Stock\Shared\Services;
 
-use CIS\Shared\Contracts\PersistenceServiceInterface;
-use CIS\Shared\Contracts\Results\TxResult;
-use CIS\Shared\Contracts\ShipmentPlan;
-use PDO;
 use RuntimeException;
 
-/**
- * Staff Internal Transfers — Persistence Adapter (STUB)
- *
- * Provides the same interface as PersistenceService but intentionally throws until
- * the staff-transfer tables are wired in. This prevents accidental production usage.
- */
-final class PersistenceStaff implements PersistenceServiceInterface
+final class PersistenceStaff
 {
-    public function __construct(private PDO $pdo) {}
-
-    public function commit(ShipmentPlan $plan): TxResult
+    public function commit(): never
     {
-        throw new RuntimeException(
-            'PERSISTENCE_STAFF_NOT_IMPLEMENTED: Wire Staff Internal Transfer persistence when ready.'
-        );
+        throw new RuntimeException('PERSISTENCE_STAFF_NOT_IMPLEMENTED');
     }
 }

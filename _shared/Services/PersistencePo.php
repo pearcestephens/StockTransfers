@@ -1,31 +1,21 @@
 <?php
 declare(strict_types=1);
+/**
+ * File: PersistencePo.php
+ * Purpose: Stub for future purchase order persistence wiring
+ * Author: GitHub Copilot
+ * Last Modified: 2025-09-29
+ * Dependencies: none
+ */
 
-namespace CIS\Shared\Services;
+namespace Modules\Transfers\Stock\Shared\Services;
 
-use CIS\Shared\Contracts\PersistenceServiceInterface;
-use CIS\Shared\Contracts\Results\TxResult;
-use CIS\Shared\Contracts\ShipmentPlan;
-use PDO;
 use RuntimeException;
 
-/**
- * Purchase Orders (Inbound) — Persistence Adapter (STUB)
- *
- * Mirrors the PersistenceService contract but requires implementation against the
- * purchase-order equivalents. Until wired, this stub prevents accidental usage by
- * throwing a clear runtime exception.
- */
-final class PersistencePo implements PersistenceServiceInterface
+final class PersistencePo
 {
-    public function __construct(private PDO $pdo) {}
-
-    public function commit(ShipmentPlan $plan): TxResult
+    public function commit(): never
     {
-        throw new RuntimeException(
-            'PERSISTENCE_PO_NOT_IMPLEMENTED: Wire the PO persistence when ready. ' .
-            'Plan received: mode=' . $plan->carrier_label .
-            ', send_now=' . ($plan->send_now ? 'true' : 'false')
-        );
+        throw new RuntimeException('PERSISTENCE_PO_NOT_IMPLEMENTED');
     }
 }
