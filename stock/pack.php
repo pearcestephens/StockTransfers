@@ -149,6 +149,41 @@ if (isset($_GET['debug']) && $_GET['debug'] === '1') {
   error_log("Pack Debug - fromOutletId resolved to: $fromOutletId");
 }
 
+// --------------------------------------------------------------------------------------
+// Draft Data Processing (Single Load Optimization)
+// --------------------------------------------------------------------------------------
+
+// Process draft data if available
+$draftData = null;
+$draftUpdatedAt = null;
+
+if (!empty($transfer['draft_data'])) {
+  try {
+    $draftData = json_decode($transfer['draft_data'], true);
+    $draftUpdatedAt = $transfer['draft_updated_at'];
+    
+    // Apply draft data to transfer items (merge counted quantities)
+    if (is_array($draftData['counted_qty'] ?? null)) {
+      foreach ($items as &$item) {
+        $itemId = $item['id'] ?? null;
+        if ($itemId && isset($draftData['counted_qty'][$itemId])) {
+          $item['counted_qty'] = (int)$draftData['counted_qty'][$itemId];
+        }
+      }
+      unset($item); // Clean up reference
+    }
+    
+    // Debug draft data
+    if (isset($_GET['debug']) && $_GET['debug'] === '1') {
+      error_log("Pack Debug - Draft data loaded: " . print_r($draftData, true));
+      error_log("Pack Debug - Draft updated at: $draftUpdatedAt");
+    }
+    
+  } catch (Exception $e) {
+    error_log("Pack Debug - Failed to parse draft data: " . $e->getMessage());
+  }
+}
+
 // Get source stock levels
 $sourceStockMap = [];
 if ($items && !empty($fromOutletId)) {
@@ -388,9 +423,25 @@ if ($autoPlan !== null) {
 // Render View
 // --------------------------------------------------------------------------------------
 
+// Prepare initial draft data for JavaScript (single load optimization)
+$initialDraftData = [];
+if ($draftData && $draftUpdatedAt) {
+  $initialDraftData = [
+    'counted_qty' => $draftData['counted_qty'] ?? [],
+    'added_products' => $draftData['added_products'] ?? [],
+    'removed_items' => $draftData['removed_items'] ?? [],
+    'courier_settings' => $draftData['courier_settings'] ?? [],
+    'notes' => $draftData['notes'] ?? '',
+    'saved_at' => $draftUpdatedAt
+  ];
+}
+
 // Load templates
 include $DOCUMENT_ROOT . '/assets/template/html-header.php';
 include $DOCUMENT_ROOT . '/assets/template/header.php';
+
+// Pass initial draft data to JavaScript (avoid startup queries)
+echo '<script type="application/json" id="initialDraftData">' . json_encode($initialDraftData, JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
 
 // Render the main pack view using components
 include __DIR__ . '/views/pack.view.php';

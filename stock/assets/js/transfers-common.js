@@ -210,21 +210,8 @@
   // NZ date
   var nzDate = new Date().toLocaleDateString("en-NZ", {year:"numeric", month:"short", day:"2-digit"});
 
-  // Build fixed print header/footer
-  var head = document.createElement("div");
-  head.id = "print-header";
-  head.innerHTML =
-    '<div class="ph-title">'+ ROUTE_LABEL +'</div>' +
-    '<div class="ph-meta"><div>Date: '+ nzDate +'</div><div>Transfer #: '+ tid +'</div></div>';
-
-  var foot = document.createElement("div");
-  foot.id = "print-footer";
-  foot.innerHTML =
-    '<div class="pf-left">The Vape Shed — Pack & Ship</div>' +
-    '<div class="pf-right"></div>';
-
-  document.body.appendChild(head);
-  document.body.appendChild(foot);
+  // Removed automatic injection of #print-header/#print-footer (was conflicting with real page footer).
+  // If print chrome is required later, reintroduce with namespaced IDs (e.g., packPrintHeader) and isolated CSS.
 
   // Watermark helps reunite separated pages
   document.body.setAttribute("data-doc-watermark", (tid?("TFR-"+tid+" • "):"") + ROUTE_LABEL);

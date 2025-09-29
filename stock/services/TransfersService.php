@@ -46,6 +46,8 @@ final class TransfersService
                     t.status,
                     t.state,
                     t.created_at,
+                    t.draft_data,
+                    t.draft_updated_at,
                     vo_from.website_outlet_id AS outlet_from_legacy_id,
                     vo_from.name              AS outlet_from_name,
                     vo_to.website_outlet_id   AS outlet_to_legacy_id,

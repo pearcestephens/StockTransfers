@@ -10,49 +10,6 @@
 require_once __DIR__ . '/_shared/Autoload.php';
 require_once __DIR__ . '/_shared/Support/AssetHelpers.php';
 
-// Mock data based on the screenshot
-$mockItems = [
-  [
-    'id' => 1,
-    'product_id' => 12345,
-    'product_name' => 'Brutal - Raspberry Sour 120ml - 3mg',
-    'product_sku' => '5056598132987',
-    'planned_qty' => 7,
-    'counted_qty' => null, // Empty for testing
-  ],
-  [
-    'id' => 2, 
-    'product_id' => 12346,
-    'product_name' => 'Brutal - Sweet Licorice 120ml - 3mg',
-    'product_sku' => '5056598132970',
-    'planned_qty' => 4,
-    'counted_qty' => 4,
-  ],
-  [
-    'id' => 3,
-    'product_id' => 12347, 
-    'product_name' => 'Disposavape L-Pod 0.8ohm Cartridge - 2 Pack',
-    'product_sku' => '697590702507',
-    'planned_qty' => 10,
-    'counted_qty' => 10,
-  ],
-  [
-    'id' => 4,
-    'product_id' => 12348,
-    'product_name' => 'DISPOSAVAPE B-BOXX (Refill Cartridge) - Green - 25mg',
-    'product_sku' => '1234567890123',
-    'planned_qty' => 20,
-    'counted_qty' => null,
-  ]
-];
-
-$mockSourceStockMap = [
-  12345 => 15,  // Raspberry Sour has 15 in stock
-  12346 => 8,   // Sweet Licorice has 8 in stock 
-  12347 => 0,   // L-Pod out of stock
-  12348 => 25,  // B-BOXX has 25 in stock
-];
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -64,7 +21,12 @@ $mockSourceStockMap = [
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
     <?= load_transfer_css(); ?>
 </head>
-<body class="bg-light">
+<body class="bg-light" data-txid="13205">
+
+<!-- Initial draft data for JavaScript -->
+<script type="application/json" id="initialDraftData">
+{"counted_qty":{},"added_products":[],"removed_items":[],"courier_settings":[],"notes":"","saved_at":""}
+</script data-txid="13205">
 
 <div class="container-fluid mt-4">
     <div class="row">
@@ -228,8 +190,16 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('autofillFromPlanned')?.addEventListener('click', testAutofill);
   
   console.log('[Unified View Test] Page loaded successfully');
+  
+  // Debug auto-save system
+  console.log('Checking auto-save system...');
+  console.log('Transfer ID from body:', document.body.dataset.txid);
+  console.log('PackAutoSave instance:', window.packAutoSave);
 });
 </script>
+
+<!-- Load Transfer JavaScript Assets -->
+<?= load_transfer_js(); ?>
 
 </body>
 </html>

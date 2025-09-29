@@ -31,12 +31,44 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST')     { fail('METHOD_NOT_ALL
 // ---- Parse
 $in = json_input();
 $transferId = (int)($in['transfer_id'] ?? 0);
-$carrier    = (string)($in['carrier'] ?? '');
-$tracking   = trim((string)($in['tracking'] ?? ''));
+$carrier    = strtolower(trim((string)($in['carrier'] ?? '')));
+$tracking   = strtoupper(trim((string)($in['tracking'] ?? '')));
 $notes      = trim((string)($in['notes'] ?? ''));
 
 if (!$transferId) fail('MISSING_PARAM','transfer_id required');
 if ($tracking === '') fail('MISSING_PARAM','tracking required');
+
+// Validation: tracking pattern (alphanumeric + - _) 4–64 chars
+if (!preg_match('/^[A-Z0-9\-_]{4,64}$/', $tracking)) {
+  fail('INVALID_TRACKING','Tracking must be 4-64 chars (A-Z 0-9 - _)');
+}
+// Optional: reject obviously repeated nonsense (e.g. same char >= 10)
+if (preg_match('/^(\w)\1{9,}$/', $tracking)) {
+  fail('INVALID_TRACKING_PATTERN','Tracking pattern not acceptable');
+}
+
+// Notes length cap
+if (strlen($notes) > 140) {
+  $notes = substr($notes,0,140);
+}
+
+// Normalise carrier whitelist
+$carrierMap = [
+  'nzp'=>'nzpost','nzpost'=>'nzpost','nz c'=>'nzc','nzc'=>'nzc','nz couriers'=>'nzc','manual'=>'manual','other'=>'manual'
+];
+if ($carrier !== '') {
+  $carrier = $carrierMap[$carrier] ?? $carrier;
+}
+if (!preg_match('/^[a-z0-9_\-]{0,32}$/',$carrier)) $carrier='manual';
+
+// Basic rate limit: max 30 tracking inserts per transfer per hour
+try {
+  $pdoTmp = pdo();
+  $rl = $pdoTmp->prepare('SELECT COUNT(*) FROM transfer_parcels p JOIN transfer_shipments s ON s.id=p.shipment_id WHERE s.transfer_id = :t AND p.created_at > (NOW() - INTERVAL 1 HOUR)');
+  $rl->execute([':t'=>$transferId]);
+  $cnt = (int)$rl->fetchColumn();
+  if ($cnt >= 30) fail('RATE_LIMIT','Too many tracking entries recently (limit 30/hr)');
+} catch (Throwable $e) { /* soft fail */ }
 
 $pdo = pdo();
 $pdo->beginTransaction();
@@ -66,6 +98,12 @@ try {
       (:s, 1 + COALESCE((SELECT MAX(box_number) FROM transfer_parcels WHERE shipment_id=:s), 0),
        :trk, :car, 'labelled', NOW())
   ");
+    INSERT INTO transfer_parcels
+      (shipment_id, box_number, tracking_number, courier, status, created_at)
+    VALUES
+      (:s, 1 + COALESCE((SELECT MAX(box_number) FROM transfer_parcels WHERE shipment_id=:s), 0),
+       :trk, :car, 'labelled', NOW())
+  ");
   $st->execute([
     ':s'   => $shipmentId,
     ':trk' => $tracking,
@@ -83,7 +121,12 @@ try {
   $log->execute([
     ':t'   => $transferId,
     ':s'   => $shipmentId,
-    ':data'=> json_encode(['manual_tracking'=>$tracking,'carrier'=>$carrier,'notes'=>$notes], JSON_UNESCAPED_SLASHES)
+    ':data'=> json_encode([
+        'manual_tracking'=>$tracking,
+        'carrier'=>$carrier,
+        'notes'=>$notes,
+        'v'=>'1'
+    ], JSON_UNESCAPED_SLASHES)
   ]);
 
   $pdo->commit();

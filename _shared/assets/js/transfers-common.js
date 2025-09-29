@@ -107,6 +107,7 @@
 })(window, window.jQuery);
 
 (function(){
+  // Canonical transfers-common.js (shared). Module-level duplicate removed to prevent double print header/footer.
   const root = document.getElementById('pack-bottom'); if(!root) return;
   const TID = parseInt(root.getAttribute('data-transfer')||'0',10);
 
@@ -204,27 +205,19 @@
   // Transfer ID
   var tid = value("#transferID") || text("#sw-tid") || ((text(".card-title")||"").match(/\d+/)||[])[0] || "";
 
-  // Per your spec: force the printed route label to say "Hamilton to Auckland"
-  var ROUTE_LABEL = "Hamilton to Auckland";
+  // Removed hard-coded route label override; will fall back to dynamic labels if needed.
+  var ROUTE_LABEL = (function(){
+    // Attempt to derive from visible UI (origin → destination) or fallback blank
+    var h = document.querySelector('.card-header .card-subtitle, .pack-header-join .card-subtitle');
+    var txt = h ? h.textContent.trim() : '';
+    if(/\S+\s+→\s+\S+/.test(txt)) return txt; // already formatted
+    return txt || '';
+  })();
 
   // NZ date
   var nzDate = new Date().toLocaleDateString("en-NZ", {year:"numeric", month:"short", day:"2-digit"});
 
-  // Build fixed print header/footer
-  var head = document.createElement("div");
-  head.id = "print-header";
-  head.innerHTML =
-    '<div class="ph-title">'+ ROUTE_LABEL +'</div>' +
-    '<div class="ph-meta"><div>Date: '+ nzDate +'</div><div>Transfer #: '+ tid +'</div></div>';
-
-  var foot = document.createElement("div");
-  foot.id = "print-footer";
-  foot.innerHTML =
-    '<div class="pf-left">The Vape Shed — Pack & Ship</div>' +
-    '<div class="pf-right"></div>';
-
-  document.body.appendChild(head);
-  document.body.appendChild(foot);
+  // Removed automatic injection of #print-header/#print-footer to avoid layout conflicts.
 
   // Watermark helps reunite separated pages
   document.body.setAttribute("data-doc-watermark", (tid?("TFR-"+tid+" • "):"") + ROUTE_LABEL);

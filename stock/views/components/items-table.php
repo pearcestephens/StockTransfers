@@ -77,7 +77,7 @@ if (!function_exists('tfx_render_product_cell') && isset($table_config['render_f
               $productId = (string)($item['product_id'] ?? '');
               $planned = max(0, (int)($item['qty_requested'] ?? 0));
               $sentSoFar = max(0, (int)($item['qty_sent_total'] ?? 0));
-              $stockOnHand = $productId > 0 ? max(0, (int)($table_config['source_stock_map'][$productId] ?? 0)) : null;
+              $stockOnHand = !empty($productId) ? max(0, (int)($table_config['source_stock_map'][$productId] ?? 0)) : null;
               $inventory = max($planned, $sentSoFar, $stockOnHand ?? 0);
               
               if ($planned <= 0) continue;

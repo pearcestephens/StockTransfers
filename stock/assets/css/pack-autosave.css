@@ -1,0 +1,109 @@
+/* Pack Transfer Auto-Save Status Styling */
+
+.draft-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+}
+
+/* Idle State - Gray */
+.status-idle {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.status-idle .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #6c757d;
+}
+
+/* Pending/Saving State - Blue with animation */
+.status-pending,
+.status-saving {
+    background-color: #e3f2fd;
+    color: #1976d2;
+    border: 1px solid #bbdefb;
+}
+
+.status-pending .pill-dot,
+.status-saving .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #1976d2;
+    animation: pulse-blue 1.5s ease-in-out infinite;
+}
+
+/* Saved State - Green */
+.status-saved {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+}
+
+.status-saved .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #2e7d32;
+}
+
+/* Error State - Red */
+.status-error {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+}
+
+.status-error .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #c62828;
+}
+
+/* Pulse animation for saving states */
+@keyframes pulse-blue {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Auto-save pill container */
+.autosave-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+/* Make sure the status text is visible */
+.pill-text {
+    line-height: 1;
+    font-weight: 600;
+}
+
+/* Last saved timestamp styling */
+.autosave-status .text-muted {
+    font-size: 10px;
+    margin-top: 2px;
+    color: #6c757d;
+}

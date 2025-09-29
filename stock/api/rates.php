@@ -22,22 +22,72 @@ try {
   $in      = json_input();
 
   // ---------------- Parse input (once) ----------------
-  $meta    = (array)($in['meta'] ?? []);
+  $meta      = (array)($in['meta'] ?? []);
   $container = (string)($in['container'] ?? 'box');               // 'box' | 'satchel'
-  $pkgs    = (array)($in['packages'] ?? []);                      // only required for box
-  $satchel = (array)($in['satchel'] ?? []);                       // { total_kg, bag_code?, bag_name? }
-  $opt     = (array)($in['options'] ?? []);
-  $facts   = (array)($in['address_facts'] ?? []);
-  $allow   = (array)($in['carriers_enabled'] ?? []);
-  $fromOutletId = (string)($meta['from_outlet_id'] ?? '');
-  $toOutletId   = (string)($meta['to_outlet_id']   ?? '');
+  $pkgs      = (array)($in['packages'] ?? []);                    // only required for box
+  $satchel   = (array)($in['satchel'] ?? []);                     // { total_kg, bag_code?, bag_name? }
+  $opt       = (array)($in['options'] ?? []);
+  $facts     = (array)($in['address_facts'] ?? []);
+  $allow     = (array)($in['carriers_enabled'] ?? []);
 
-  if (!$fromOutletId) fail('MISSING_PARAM','meta.from_outlet_id required');
-  if (!$toOutletId)   fail('MISSING_PARAM','meta.to_outlet_id required');
+  // Accept either legacy numeric outlet id (>0) OR UUID string; treat 0 / '' as empty.
+  $fromLegacy  = isset($meta['from_outlet_id']) ? (int)$meta['from_outlet_id'] : 0;
+  $toLegacy    = isset($meta['to_outlet_id'])   ? (int)$meta['to_outlet_id']   : 0;
+  $fromUuid    = trim((string)($meta['from_outlet_uuid'] ?? ''));
+  $toUuid      = trim((string)($meta['to_outlet_uuid']   ?? ''));
+  $transferId  = (int)($meta['transfer_id'] ?? 0);
+
+  $fromOutletId = '';
+  $toOutletId   = '';
+  $fromMode = '';
+  $toMode   = '';
+  if ($fromUuid !== '') { $fromOutletId = $fromUuid; $fromMode='uuid'; }
+  elseif ($fromLegacy > 0) { $fromOutletId = (string)$fromLegacy; $fromMode='legacy_id'; }
+  if ($toUuid !== '') { $toOutletId = $toUuid; $toMode='uuid'; }
+  elseif ($toLegacy > 0) { $toOutletId = (string)$toLegacy; $toMode='legacy_id'; }
+
+  $warnings = [];
+
+  // Fallback: attempt to resolve from transfer record if both missing & transfer_id provided
+  if ($transferId > 0 && ($fromOutletId === '' || $toOutletId === '')) {
+    try {
+      $pdoTmp = pdo();
+      $queries = [
+        'SELECT from_outlet_id, to_outlet_id, from_outlet_uuid, to_outlet_uuid FROM stock_transfers WHERE transfer_id = :id LIMIT 1',
+        'SELECT from_outlet_id, to_outlet_id, from_outlet_uuid, to_outlet_uuid FROM transfers WHERE transfer_id = :id LIMIT 1',
+        'SELECT from_outlet_id, to_outlet_id, from_outlet_uuid, to_outlet_uuid FROM transfers WHERE id = :id LIMIT 1'
+      ];
+      foreach ($queries as $sqlQ) {
+        try {
+          $stq = $pdoTmp->prepare($sqlQ);
+          $stq->execute([':id'=>$transferId]);
+          if ($row = $stq->fetch(PDO::FETCH_ASSOC)) {
+            if ($fromOutletId === '') {
+              if (!empty($row['from_outlet_uuid'])) { $fromOutletId = (string)$row['from_outlet_uuid']; $fromMode='uuid_fallback'; }
+              elseif (!empty($row['from_outlet_id']) && (int)$row['from_outlet_id']>0) { $fromOutletId=(string)(int)$row['from_outlet_id']; $fromMode='legacy_fallback'; }
+            }
+            if ($toOutletId === '') {
+              if (!empty($row['to_outlet_uuid'])) { $toOutletId = (string)$row['to_outlet_uuid']; $toMode='uuid_fallback'; }
+              elseif (!empty($row['to_outlet_id']) && (int)$row['to_outlet_id']>0) { $toOutletId=(string)(int)$row['to_outlet_id']; $toMode='legacy_fallback'; }
+            }
+            if ($fromOutletId !== '' && $toOutletId !== '') break;
+          }
+        } catch (Throwable $ignore) { /* try next */ }
+      }
+    } catch (Throwable $ignoreOuter) { /* ignore fallback errors */ }
+  }
+
+  if ($fromOutletId === '') { $warnings[] = 'MISSING_FROM_OUTLET'; }
+  if ($toOutletId   === '') { $warnings[] = 'MISSING_TO_OUTLET'; }
+  // If still missing, downgrade to warning (200) instead of 400 per new requirement.
 
   // satchel: no dims required; box: packages are required
   if ($container === 'box' && !$pkgs) {
     fail('MISSING_PARAM','packages required for container=box');
+  }
+
+  if ($warnings) {
+    ok(['rates'=>[], 'plan'=>['warnings'=>$warnings, 'note'=>'Outlet(s) unresolved; supply valid IDs or UUIDs.'], 'meta'=>['transfer_id'=>$transferId, 'from_mode'=>$fromMode, 'to_mode'=>$toMode]]);
   }
 
   // total content weight in grams
@@ -162,7 +212,7 @@ try {
   usort($rows, static fn($a,$b)=> ($a['total'] <=> $b['total']));
 
   // ---------------- One envelope out ----------------
-  ok(['rates'=>$rows, 'plan'=>$plan]);
+  ok(['rates'=>$rows, 'plan'=>$plan, 'meta'=>['from_mode'=>$fromMode, 'to_mode'=>$toMode, 'transfer_id'=>$transferId]]);
 
 } catch (Throwable $e) {
   // keep envelope-style even on internal errors (per your guide)

@@ -287,6 +287,20 @@
       throw new Error('Missing outlet UUIDs in boot payload.');
     }
 
+      // Carrier mapping (manual external courier path)
+      const CARRIER_MODE = { 1: 'NZP_MANUAL', 2: 'NZC_MANUAL' }; // 1=NZ Post, 2=NZ Couriers (GSS)
+      // If UI exposed generic external mode we map to canonical using selected carrier
+      const carrierSelect = document.getElementById('carrier_id');
+      let carrierId = null;
+      if (carrierSelect && carrierSelect.value) {
+        const cid = parseInt(carrierSelect.value, 10);
+        if (Number.isFinite(cid)) carrierId = cid;
+      }
+      let canonicalMode = mode;
+      if (mode === 'COURIER_MANAGED_EXTERNALLY') {
+        canonicalMode = CARRIER_MODE[carrierId] || 'NZC_MANUAL';
+      }
+
     const parcels = collectParcelsForPayload();
     const totals = {};
     if (state.metrics && Number.isFinite(state.metrics.weight) && state.metrics.weight > 0) {
@@ -300,7 +314,7 @@
 
     const payload = {
       idempotency_key: idempotencyKey,
-      mode,
+      mode: canonicalMode,
       send_now: effectiveSendNow,
       transfer: {
         id: String(BOOT.transferId ?? ''),
@@ -309,6 +323,10 @@
       },
       totals: totals,
     };
+
+    if (carrierId) {
+      payload.carrier_id = carrierId; // for audit / server-side validation
+    }
 
     if (parcels.length) {
       payload.parcels = parcels.map(row => ({
@@ -652,6 +670,7 @@
       modeSelect.addEventListener('change', () => {
         state.packMode = modeSelect.value;
         syncPackOnlyPanels(state.packMode);
+        showCarrierIfNeeded(state.packMode);
       });
     }
 
@@ -686,6 +705,36 @@
     });
 
     renderRates();
+    // After initial UI render attempt to inject carrier row if mode select exists.
+    injectCarrierRow();
+    const currentMode = document.getElementById('packModeSelect')?.value;
+    if (currentMode) showCarrierIfNeeded(currentMode);
+  }
+
+  // ================= Carrier Row Injection (External Courier Support) =================
+  function injectCarrierRow(){
+    if (document.getElementById('carrier-row')) return; // already present
+    const modeSel = document.getElementById('packModeSelect');
+    if (!modeSel || !modeSel.parentElement) return;
+    // Heuristic: insert after the mode select container (wrap in a div if needed)
+    const wrapper = modeSel.closest('.form-group') || modeSel.parentElement;
+    if (!wrapper || !wrapper.parentElement) return;
+    const carrierDiv = document.createElement('div');
+    carrierDiv.className = 'form-group';
+    carrierDiv.id = 'carrier-row';
+    carrierDiv.style.display = 'none';
+    carrierDiv.innerHTML = '<label for="carrier_id" class="mb-1">Carrier</label>'+
+      '<select id="carrier_id" class="form-control form-control-sm">'+
+        '<option value="2">NZ Couriers (GSS)</option>'+ // carriers.id = 2
+        '<option value="1">NZ Post</option>'+            // carriers.id = 1
+      '</select>'+
+      '<small class="text-muted">Choose the carrier when using “Courier Managed Externally”.</small>';
+    wrapper.parentElement.insertBefore(carrierDiv, wrapper.nextSibling);
+  }
+  function showCarrierIfNeeded(modeVal){
+    const row = document.getElementById('carrier-row'); if(!row) return;
+    const needs = (modeVal === 'COURIER_MANAGED_EXTERNALLY' || modeVal === 'NZC_MANUAL' || modeVal === 'NZP_MANUAL');
+    row.style.display = needs ? '' : 'none';
   }
 
   function primeMetricsFromBoot(){
@@ -760,8 +809,11 @@
 
   // ------- Renderers
   function loadPresetOptions(){
-    const sel = $('#preset'); sel.innerHTML='';
-    PRESETS[state.container].forEach(p => { const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
+    const sel = $('#preset');
+    if (!sel) { return; } // Guard when dispatch console hidden
+    sel.innerHTML='';
+    const list = PRESETS[state.container] || [];
+    list.forEach(p => { const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
   }
   function renderPackages(){
     const body = $('#pkgBody'); body.innerHTML='';
@@ -1793,17 +1845,19 @@
 
   // ------- Boot
   function boot(){
+    // If the dispatch console root is absent (hidden on pack-only view), exit early.
+    if (!document.getElementById('psx-app')) {
+      return; // Nothing to wire – prevents null references (e.g. #preset)
+    }
     const hydrated = applyBootAutoplan();
     loadPresetOptions();
     if (!hydrated) primeMetricsFromBoot();
     renderPackages();
-  renderTrackingRefs();
+    renderTrackingRefs();
     renderFeed();
     wire();
     syncPrintPoolUI();
-    if (PACK_ONLY) {
-      return;
-    }
+    if (PACK_ONLY) { return; }
     scheduleRatesRefresh('boot', {force:true});
     refreshAddressFacts();
     refreshPrintPool();

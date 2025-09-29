@@ -2,16 +2,22 @@
 /**
  * Transfer Header Component
  * 
- * Displays transfer information and primary actions
+ * Displays transfer information and primary actions.
+ * Now supports an optional 'wrapper_class' in $header_config to allow
+ * caller to override outer <section> classes (e.g. to visually join with
+ * adjacent cards while keeping files/components separate.
  * 
- * Required variables:
- * - $header_config['transfer_id'] - Transfer ID
- * - $header_config['title'] - Page title
- * - $header_config['subtitle'] - Subtitle (from → to)
- * - $header_config['description'] - Page description
- * - $header_config['actions'] - Array of action button configs
- * - $header_config['metrics'] - Array of metric displays
- * - $header_config['draft_status'] - Draft status configuration
+ * Config keys:
+ * - transfer_id (int)
+ * - title (string)
+ * - title_id (string, optional - for aria-labelledby linkage)
+ * - subtitle (string)
+ * - description (string)
+ * - actions (array)
+ * - metrics (array)
+ * - show_draft_status (bool)
+ * - draft_status (array: state,text,last_saved)
+ * - wrapper_class (string, optional) Custom classes for outer section. Defaults to 'card mb-3'.
  */
 
 $default_config = [
@@ -30,9 +36,11 @@ $default_config = [
 ];
 
 $header_config = array_merge($default_config, $header_config ?? []);
+$wrapper_class = trim($header_config['wrapper_class'] ?? 'card mb-3');
+$wrapper_class = htmlspecialchars($wrapper_class, ENT_QUOTES, 'UTF-8');
 ?>
 
-<section class="card mb-3" aria-labelledby="<?= htmlspecialchars($header_config['title_id'] ?? 'transfer-title', ENT_QUOTES, 'UTF-8') ?>">
+<section class="<?= $wrapper_class ?>" aria-labelledby="<?= htmlspecialchars($header_config['title_id'] ?? 'transfer-title', ENT_QUOTES, 'UTF-8') ?>">
   <div class="card-header d-flex justify-content-between align-items-center">
     <div>
       <h1 class="card-title h4 mb-0" id="<?= htmlspecialchars($header_config['title_id'] ?? 'transfer-title', ENT_QUOTES, 'UTF-8') ?>">
@@ -69,8 +77,8 @@ $header_config = array_merge($default_config, $header_config ?? []);
     <?php endif; ?>
   </div>
 
-  <div class="card-body transfer-data">
-    <?php if ($header_config['show_draft_status'] || !empty($header_config['metrics'])): ?>
+  <?php if ($header_config['show_draft_status'] || !empty($header_config['metrics'])): ?>
+    <div class="card-body transfer-data">
       <div class="d-flex justify-content-between align-items-start w-100 mb-3 gap-8px" id="table-action-toolbar">
         <?php if ($header_config['show_draft_status']): ?>
           <div class="d-flex flex-column gap-6px">
@@ -87,10 +95,10 @@ $header_config = array_merge($default_config, $header_config ?? []);
                 <span class="pill-text" id="draft-indicator-text"><?= htmlspecialchars($header_config['draft_status']['text'], ENT_QUOTES, 'UTF-8') ?></span>
               </button>
             </div>
-            <div class="small text-muted">Last saved: <span id="draft-last-saved"><?= htmlspecialchars($header_config['draft_status']['last_saved'], ENT_QUOTES, 'UTF-8') ?></span></div>
+            <div class="small text-muted"><span id="draft-last-saved"><?= htmlspecialchars($header_config['draft_status']['last_saved'], ENT_QUOTES, 'UTF-8') ?></span></div>
           </div>
         <?php endif; ?>
-        
+
         <?php if (!empty($header_config['metrics'])): ?>
           <div class="d-flex align-items-center flex-wrap gap-10px">
             <?php foreach ($header_config['metrics'] as $metric): ?>
@@ -102,6 +110,6 @@ $header_config = array_merge($default_config, $header_config ?? []);
           </div>
         <?php endif; ?>
       </div>
-    <?php endif; ?>
-  </div>
+    </div>
+  <?php endif; ?>
 </section>
