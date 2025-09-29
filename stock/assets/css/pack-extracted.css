@@ -1,0 +1,319 @@
+/* ==========================================================================
+   PACK.PHP EXTRACTED STYLES
+   All inline styles and <style> blocks extracted from pack.php
+   ========================================================================== */
+
+/* ===== INLINE STYLES FROM HTML ELEMENTS ===== */
+
+/* Gap utility classes for flexbox layouts */
+.gap-12px { gap: 12px; }
+.gap-10px { gap: 10px; }
+.gap-8px { gap: 8px; }
+.gap-6px { gap: 6px; }
+
+/* Warning icon styling */
+.pack-warning-icon {
+  font-size: 1.4rem;
+  padding-top: 2px;
+}
+
+/* Packaged mode warning text */
+.pack-warning-title {
+  font-weight: 700;
+}
+
+/* Product search results container */
+#product-search-results {
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* Table column widths */
+.pack-table th.col-checkbox { width: 34px; }
+.pack-table th.col-image { width: 56px; }
+.pack-table th.col-add { width: 42px; }
+.pack-table th.col-number { width: 38px; }
+
+/* Parcel tools layout */
+.psx-parcel-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Capacity card styling */
+.psx-capacity-card {
+  border: 1px dashed var(--line);
+  margin-top: 12px;
+}
+
+.psx-capacity-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.psx-capacity-subtitle {
+  margin-bottom: 6px;
+}
+
+#meters {
+  display: grid;
+  gap: 8px;
+}
+
+.pack-slip-total-input {
+  width: 70px;
+}
+
+.pack-slip-counter {
+  margin-top: 6px;
+}
+
+/* ===== EXTRACTED <style> BLOCK STYLES ===== */
+
+/* Manual summary component */
+.psx .psx-manual-summary {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f7f7fb, #ffffff);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.psx .psx-summary-label {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.psx .psx-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 6px 0 0;
+}
+
+.psx .psx-summary-row {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+}
+
+.psx .psx-summary-key {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.psx .psx-summary-val {
+  font-weight: 600;
+  color: #1f365c;
+}
+
+/* Comment form styling */
+.psx .psx-comment-form {
+  margin-top: 12px;
+}
+
+.psx .psx-comment-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(140px, 160px) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .psx .psx-comment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.psx .psx-note-input {
+  border-radius: 10px;
+  border: 1px solid rgba(31, 54, 92, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.psx .psx-note-input:focus {
+  border-color: #4664d8;
+  box-shadow: 0 0 0 0.2rem rgba(70, 100, 216, 0.2);
+}
+
+.psx .psx-note-btn {
+  border-radius: 999px;
+  padding-left: 20px;
+  padding-right: 20px;
+  font-weight: 600;
+  box-shadow: 0 6px 12px rgba(71, 98, 209, 0.25);
+}
+
+/* Layout wrappers */
+.wrapper {
+  width: 100%;
+  max-width: 100%;
+  margin: 18px 0;
+  padding: 0;
+}
+
+.hrow-main {
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 24px 16px;
+}
+
+/* Title block styling */
+.title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title-block h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #111831;
+}
+
+.title-block h1 .mono {
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  color: #394266;
+}
+
+.title-block h1 .dest-text {
+  color: #1d2ed8;
+}
+
+.title-block .subtitle {
+  font-size: 14px;
+  color: #3b4b70;
+  font-weight: 500;
+}
+
+.title-block .subtitle span {
+  font-weight: 600;
+}
+
+/* Contact line styling */
+.contact-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: #66738f;
+}
+
+.contact-line .label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #4f5d86;
+}
+
+.contact-line .value {
+  font-weight: 500;
+  color: #212a4a;
+}
+
+.contact-line .divider {
+  opacity: 0.6;
+  font-weight: 700;
+  color: #7a85a5;
+}
+
+/* Status block styling */
+.status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.status-block .status-meta {
+  font-size: 12px;
+  color: #6a7491;
+}
+
+/* Header row meta styling */
+.hrow-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(90deg, #f4f6ff, #f9faff);
+}
+
+/* Meta chips styling */
+.meta-chips {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  min-width: 150px;
+}
+
+.chip .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #7a85a5;
+  font-weight: 700;
+}
+
+.chip .value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a2550;
+}
+
+.chip-primary {
+  background: linear-gradient(135deg, rgba(229,235,255,0.9), rgba(255,255,255,0.95));
+  border-color: rgba(119, 134, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.chip-primary .value {
+  color: #1b2bdd;
+}
+
+.hrow-meta .tnav {
+  margin-left: auto;
+}
+
+.hcard-body {
+  padding: 0 24px 20px;
+}
+
+/* Manual mode specific styles */
+.psx.psx-manual-mode .psx-parcel-card > header,
+.psx.psx-manual-mode .psx-parcel-table,
+.psx.psx-manual-mode .psx-parcel-tools,
+.psx.psx-manual-mode .psx-parcel-switch,
+.psx.psx-manual-mode .psx-capacity-info {
+  display: none !important;
+}
+
+.psx.psx-manual-mode .psx-slip-preview-wrap {
+  grid-column: 1 / -1;
+}
+
+.psx.psx-manual-mode .psx-capacity-card {
+  border-style: solid;
+  background: linear-gradient(135deg, #f7f8ff, #ffffff);
+}

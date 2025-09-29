@@ -1,33 +1,4 @@
-/* ==========================================================================
-   Transfers — Common UI (shared across Pack/Receive)
-   ========================================================================== */
 
-:root {
-  /* tfx */
-  --tfx-muted:#6c757d;
-  --tfx-success:#28a745;
-  --tfx-warning:#fd7e14;
-  --tfx-danger:#dc3545;
-  --tfx-info:#17a2b8;
-  --tfx-light:#f8f9fa;
-  --tfx-border:#dee2e6;
-
-  /* pack-bottom theme */
-  --pb-bg:#0f172a;
-  --pb-panel:#0b1224;
-  --pb-fg:#e5e7eb;
-  --pb-sub:#9aa4b2;
-  --pb-border:#1f2937;
-  --pb-chip:#111827;
-  --pb-green:#22c55e;
-  --pb-amber:#f59e0b;
-  --pb-red:#ef4444;
-  --pb-primary:#2563eb;
-  --pb-outline:#475569;
-}
-
-/* Generic card/table spacing fixes */
-.tfx-card-tight .card-body { padding:.75rem 1rem; }
 
 /* Address summary blocks (used by courier panels) */
 .address-summary {

@@ -548,10 +548,10 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
       <div class="container-fluid animated fadeIn">
         <?php if ($isPackaged): ?>
         <section class="alert alert-warning border-warning bg-white shadow-sm mb-4" role="status" aria-live="polite">
-          <div class="d-flex align-items-start" style="gap:12px;">
-            <i class="fa fa-exclamation-triangle text-warning" aria-hidden="true" style="font-size:1.4rem; padding-top:2px;"></i>
+          <div class="d-flex align-items-start gap-12px">
+            <i class="fa fa-exclamation-triangle text-warning pack-warning-icon" aria-hidden="true"></i>
             <div>
-              <h2 class="h5 mb-2 text-warning" style="font-weight:700;">Heads up: this transfer is in <span class="text-uppercase">PACKAGED</span> mode</h2>
+              <h2 class="h5 mb-2 text-warning pack-warning-title">Heads up: this transfer is in <span class="text-uppercase">PACKAGED</span> mode</h2>
               <p class="mb-2 text-muted">“Mark as Packed” already ran. You can still make last-minute edits, but dispatch isn’t locked until you send it.</p>
               <ul class="mb-2 pl-3">
                 <li>Adjusting counts, parcels, or notes will update the existing packed shipment record.</li>
@@ -566,8 +566,8 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
 
         <!-- Search / Add Panel -->
         <section class="card mb-3" id="product-search-card" aria-labelledby="product-search-title">
-          <div class="card-header d-flex justify-content-between align-items-center" style="gap:12px;">
-            <div class="d-flex align-items-center" style="gap:8px; flex:1;">
+          <div class="card-header d-flex justify-content-between align-items-center gap-12px">
+            <div class="d-flex align-items-center gap-8px flex-fill">
               <span class="sr-only" id="product-search-title">Product Search</span>
               <i class="fa fa-search text-muted" aria-hidden="true"></i>
               <input type="text" id="product-search-input" class="form-control form-control-sm"
@@ -585,16 +585,16 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
             </div>
           </div>
           <div class="card-body p-0">
-            <div id="product-search-results" class="table-responsive" style="max-height:320px; overflow:auto;">
+            <div id="product-search-results" class="table-responsive">
               <table class="table table-sm table-hover mb-0" id="product-search-table" aria-live="polite" aria-label="Product search results">
                 <thead class="thead-light">
                   <tr>
-                    <th style="width:34px;"><input type="checkbox" id="ps-select-all" aria-label="Select all results"></th>
-                    <th style="width:56px;">Img</th>
+                    <th class="col-checkbox"><input type="checkbox" id="ps-select-all" aria-label="Select all results"></th>
+                    <th class="col-image">Img</th>
                     <th>Product (Name + SKU)</th>
                     <th>Stock</th>
                     <th>Price</th>
-                    <th style="width:42px;">Add</th>
+                    <th class="col-add">Add</th>
                   </tr>
                 </thead>
                 <tbody id="product-search-tbody">
@@ -629,9 +629,9 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
 
           <div class="card-body transfer-data">
             <!-- Draft / metrics -->
-            <div class="d-flex justify-content-between align-items-start w-100 mb-3" id="table-action-toolbar" style="gap:8px;">
-              <div class="d-flex flex-column" style="gap:6px;">
-                <div class="d-flex align-items-center" style="gap:10px;">
+            <div class="d-flex justify-content-between align-items-start w-100 mb-3 gap-8px" id="table-action-toolbar">
+              <div class="d-flex flex-column gap-6px">
+                <div class="d-flex align-items-center gap-10px">
                   <!-- Draft Status Pill -->
                   <button type="button" id="draft-indicator" class="draft-status-pill status-idle"
                     data-state="idle" aria-live="polite"
@@ -642,7 +642,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                 </div>
                 <div class="small text-muted">Last saved: <span id="draft-last-saved">Not saved</span></div>
               </div>
-              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+              <div class="d-flex align-items-center flex-wrap gap-10px">
                 <span>Items: <strong id="itemsToTransfer"><?= count($items) ?></strong></span>
                 <span>Planned total: <strong id="plannedTotal">0</strong></span>
                 <span>Counted total: <strong id="countedTotal">0</strong></span>
@@ -658,7 +658,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                   <table class="table table-responsive-sm table-bordered table-striped table-sm" id="transfer-table" aria-describedby="items-title">
                     <thead>
                       <tr>
-                        <th style="width:38px;" scope="col">#</th>
+                        <th class="col-number" scope="col">#</th>
                         <th scope="col">Product</th>
                         <th scope="col">Planned Qty</th>
                         <th scope="col">Qty in stock</th>
@@ -723,207 +723,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                       <?php // Dispatch Console (View) ?>
 
   <link rel="stylesheet" href="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/css/dispatch.css?v=1.2">
-  <style>
-    .psx .psx-manual-summary {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: linear-gradient(135deg, #f7f7fb, #ffffff);
-      padding: 14px 16px;
-      margin-bottom: 16px;
-    }
-    .psx .psx-summary-label {
-      font-weight: 700;
-      letter-spacing: 0.08em;
-    }
-    .psx .psx-summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px;
-      margin: 6px 0 0;
-    }
-    .psx .psx-summary-row {
-      display: flex;
-      flex-direction: column;
-      font-size: 0.9rem;
-    }
-    .psx .psx-summary-key {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 2px;
-    }
-    .psx .psx-summary-val {
-      font-weight: 600;
-      color: #1f365c;
-    }
-    .psx .psx-comment-form {
-      margin-top: 12px;
-    }
-    .psx .psx-comment-grid {
-      display: grid;
-      grid-template-columns: 1fr minmax(140px, 160px) auto;
-      gap: 10px;
-      align-items: center;
-    }
-    @media (max-width: 768px) {
-      .psx .psx-comment-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .psx .psx-note-input {
-      border-radius: 10px;
-      border: 1px solid rgba(31, 54, 92, 0.18);
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
-    }
-    .psx .psx-note-input:focus {
-      border-color: #4664d8;
-      box-shadow: 0 0 0 0.2rem rgba(70, 100, 216, 0.2);
-    }
-    .psx .psx-note-btn {
-      border-radius: 999px;
-      padding-left: 20px;
-      padding-right: 20px;
-      font-weight: 600;
-      box-shadow: 0 6px 12px rgba(71, 98, 209, 0.25);
-    }
-    .wrapper {
-      width: 100%;
-      max-width: 100%;
-      margin: 18px 0;
-      padding: 0;
-    }
-    .hrow-main {
-      align-items: flex-start;
-      gap: 18px;
-      padding: 22px 24px 16px;
-    }
-    .title-block {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .title-block h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 700;
-      line-height: 1.25;
-      color: #111831;
-    }
-    .title-block h1 .mono {
-      font-size: 20px;
-      letter-spacing: 0.05em;
-      color: #394266;
-    }
-    .title-block h1 .dest-text {
-      color: #1d2ed8;
-    }
-    .title-block .subtitle {
-      font-size: 14px;
-      color: #3b4b70;
-      font-weight: 500;
-    }
-    .title-block .subtitle span {
-      font-weight: 600;
-    }
-    .contact-line {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      align-items: center;
-      font-size: 12px;
-      color: #66738f;
-    }
-    .contact-line .label {
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #4f5d86;
-    }
-    .contact-line .value {
-      font-weight: 500;
-      color: #212a4a;
-    }
-    .contact-line .divider {
-      opacity: 0.6;
-      font-weight: 700;
-      color: #7a85a5;
-    }
-    .status-block {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 6px;
-      padding-top: 4px;
-    }
-    .status-block .status-meta {
-      font-size: 12px;
-      color: #6a7491;
-    }
-    .hrow-meta {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 14px 24px;
-      border-top: 1px solid var(--line);
-      background: linear-gradient(90deg, #f4f6ff, #f9faff);
-    }
-    .meta-chips {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .chip {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 10px 14px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: #ffffff;
-      min-width: 150px;
-    }
-    .chip .label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #7a85a5;
-      font-weight: 700;
-    }
-    .chip .value {
-      font-size: 15px;
-      font-weight: 600;
-      color: #1a2550;
-    }
-    .chip-primary {
-      background: linear-gradient(135deg, rgba(229,235,255,0.9), rgba(255,255,255,0.95));
-      border-color: rgba(119, 134, 255, 0.4);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-    }
-    .chip-primary .value {
-      color: #1b2bdd;
-    }
-    .hrow-meta .tnav {
-      margin-left: auto;
-    }
-    .hcard-body {
-      padding: 0 24px 20px;
-    }
-    .psx.psx-manual-mode .psx-parcel-card > header,
-    .psx.psx-manual-mode .psx-parcel-table,
-    .psx.psx-manual-mode .psx-parcel-tools,
-    .psx.psx-manual-mode .psx-parcel-switch,
-    .psx.psx-manual-mode .psx-capacity-info {
-      display: none !important;
-    }
-    .psx.psx-manual-mode .psx-slip-preview-wrap {
-      grid-column: 1 / -1;
-    }
-    .psx.psx-manual-mode .psx-capacity-card {
-      border-style: solid;
-      background: linear-gradient(135deg, #f7f8ff, #ffffff);
-    }
-  </style>
+  <link rel="stylesheet" href="https://staff.vapeshed.co.nz/modules/transfers/stock/assets/css/pack-extracted.css?v=1.0">
 
   <div class="wrapper">
     <!-- HEADER & BODY -->
@@ -993,7 +793,7 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
       <section class="card psx-parcel-card" aria-label="Parcels">
         <header>
           <div class="hdr">Mode</div>
-          <div class="psx-parcel-tools" style="display:flex;gap:8px;align-items:center">
+          <div class="psx-parcel-tools">
             <div class="switch psx-parcel-switch" role="group" aria-label="Container type">
               <button class="tog" id="btnSatchel" aria-pressed="true" type="button">Satchel</button>
               <button class="tog" id="btnBox" aria-pressed="false" type="button">Box</button>
@@ -1013,12 +813,12 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
             <tbody id="pkgBody"></tbody>
           </table>
 
-          <div class="card psx-capacity-card" style="border:1px dashed var(--line);margin-top:12px">
+          <div class="card psx-capacity-card">
             <div class="body">
-                <div class="psx-capacity-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="psx-capacity-grid">
                 <div class="psx-capacity-info">
-                  <div class="sub" style="margin-bottom:6px">Capacity (25 kg boxes, 15 kg satchels)</div>
-                  <div id="meters" style="display:grid;gap:8px"></div>
+                  <div class="sub psx-capacity-subtitle">Capacity (25 kg boxes, 15 kg satchels)</div>
+                  <div id="meters"></div>
                 </div>
                 <div class="psx-slip-preview-wrap">
                   <div class="slip-head">
@@ -1033,8 +833,8 @@ include $DOCUMENT_ROOT . '/assets/template/header.php';
                       <div class="big mono">TRANSFER #<span id="slipT"><?= (int)$txId ?></span></div>
                       <div class="mono">FROM: <b id="slipFrom"><?= htmlspecialchars($dispatchFromOutlet, ENT_QUOTES, 'UTF-8') ?></b></div>
                       <div class="mono">TO:&nbsp;&nbsp; <b id="slipTo"><?= htmlspecialchars($dispatchToOutlet, ENT_QUOTES, 'UTF-8') ?></b></div>
-                      <div class="mono" style="margin-top:6px">BOX <span id="slipBox">1</span> of
-                        <input id="slipTotal" class="pn" type="number" min="1" value="1" style="width:70px" aria-label="Total boxes"></div>
+                      <div class="mono pack-slip-counter">BOX <span id="slipBox">1</span> of
+                        <input id="slipTotal" class="pn pack-slip-total-input" type="number" min="1" value="1" aria-label="Total boxes"></div>
                       <div class="rule"></div>
                     </div>
                     <div class="slip-col slip-col-tracking" id="manualTrackingWrap" hidden>
