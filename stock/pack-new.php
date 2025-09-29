@@ -377,8 +377,5 @@ if ($autoPlan !== null) {
 include $DOCUMENT_ROOT . '/assets/template/html-header.php';
 include $DOCUMENT_ROOT . '/assets/template/header.php';
 
-// Load CSS assets
-echo load_transfer_css();
-
 // Render the main pack view using components
 include __DIR__ . '/views/pack.view.php';

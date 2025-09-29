@@ -141,6 +141,10 @@ $sourceStockMap = $sourceStockMap ?? [];
             'boxes_label' => $manualSummaryBoxesLabel ?? '—'
           ]
         ];
+        
+        // Load CSS assets here (where they were in the original pack.php)
+        echo load_transfer_css();
+        
         include __DIR__ . '/components/pack-ship-console.php';
         ?>
 

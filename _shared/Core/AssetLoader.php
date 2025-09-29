@@ -202,11 +202,12 @@ class AssetLoader
      */
     public static function forStockTransfers(string $basePath = null): self
     {
-        $basePath = $basePath ?: realpath(__DIR__ . '/../../..');
+        // Point to the stock subfolder where assets are located
+        $basePath = $basePath ?: realpath(__DIR__ . '/../../../stock');
         
         return new self(
             basePath: $basePath,
-            baseUrl: 'https://staff.vapeshed.co.nz/modules/transfers/',
+            baseUrl: '/modules/transfers/stock/', // Point to stock subfolder for URLs
             cssExclusions: [], // Could exclude development/test files
             jsExclusions: [],  // Could exclude development/test files
             useFileMtimeVersioning: true
