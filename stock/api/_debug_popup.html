@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🧪 Ownership Request Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .debug-panel { 
+            position: fixed; 
+            top: 10px; 
+            right: 10px; 
+            background: #333; 
+            color: white; 
+            padding: 15px; 
+            border-radius: 8px; 
+            z-index: 99999;
+            max-width: 300px;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 8px 15px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .status { 
+            margin: 5px 0; 
+            padding: 5px; 
+            border-radius: 3px; 
+            font-size: 12px;
+        }
+        .success { background: #28a745; }
+        .warning { background: #ffc107; color: black; }
+        .error { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="debug-panel">
+        <h4>🔧 Ownership Request Debug</h4>
+        <div id="lockStatus" class="status warning">Lock Status: Unknown</div>
+        <div id="apiStatus" class="status warning">API Status: Unknown</div>
+        <div id="lastCheck" class="status warning">Last Check: Never</div>
+        
+        <button onclick="testAPI()">Test API</button>
+        <button onclick="testPopup()">Force Popup</button>
+        <button onclick="checkLockStatus()">Check Lock</button>
+        <button onclick="manualRequest()">Manual Check</button>
+        <button onclick="forceInit()">Force Init</button>
+    </div>
+    
+    <script>
+        function testAPI() {
+            fetch('https://staff.vapeshed.co.nz/modules/transfers/stock/api/lock_requests_pending.php?transfer_id=13219')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('apiStatus').textContent = `API: ${data.success ? 'Working' : 'Failed'}`;
+                document.getElementById('apiStatus').className = `status ${data.success ? 'success' : 'error'}`;
+                console.log('API Test Result:', data);
+            })
+            .catch(error => {
+                document.getElementById('apiStatus').textContent = 'API: Error';
+                document.getElementById('apiStatus').className = 'status error';
+                console.error('API Test Failed:', error);
+            });
+        }
+        
+        function testPopup() {
+            if (window.packLockSystem) {
+                window.packLockSystem.testOwnershipPopup();
+            } else {
+                alert('PackLockSystem not found!');
+            }
+        }
+        
+        function checkLockStatus() {
+            if (window.packLockSystem) {
+                const status = window.packLockSystem.lockStatus;
+                document.getElementById('lockStatus').textContent = `Lock: ${status.has_lock ? 'YOU HAVE IT' : 'SOMEONE ELSE'}`;
+                document.getElementById('lockStatus').className = `status ${status.has_lock ? 'success' : 'warning'}`;
+                console.log('Lock Status:', status);
+            } else {
+                document.getElementById('lockStatus').textContent = 'Lock: System Not Found';
+                document.getElementById('lockStatus').className = 'status error';
+            }
+        }
+        
+        function manualRequest() {
+            if (window.packLockSystem) {
+                window.packLockSystem.checkPendingRequests();
+                document.getElementById('lastCheck').textContent = 'Last Check: ' + new Date().toLocaleTimeString();
+                document.getElementById('lastCheck').className = 'status success';
+            } else {
+                alert('PackLockSystem not found!');
+            }
+        }
+        
+        function forceInit() {
+            if (window.debugOwnership) {
+                window.debugOwnership.forceInit();
+                setTimeout(checkLockStatus, 500); // Check status after init
+            } else {
+                alert('Debug tools not found!');
+            }
+        }
+        
+        // Auto-update every 5 seconds
+        setInterval(() => {
+            checkLockStatus();
+        }, 5000);
+        
+        // Initial check
+        setTimeout(checkLockStatus, 1000);
+    </script>
+</body>
+</html>

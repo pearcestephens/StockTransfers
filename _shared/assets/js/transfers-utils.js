@@ -1,362 +1,100 @@
-/* ==========================================================================
-   Transfers — Shared JavaScript Utilities
-   Reusable functions and utilities for all transfer components
-   Requires: jQuery (>=3.x)
-   ========================================================================== */
-
-(function(window, $) {
+(function (window, $) {
   'use strict';
+  if (!$) { console.error('[Transfers/Utils] jQuery is required.'); return; }
 
-  if (!$) {
-    console.error('[Transfers/Utils] jQuery is required.');
-    return;
-  }
+  // Namespace
+  var TransfersUtils = window.TransfersUtils = (window.TransfersUtils || {});
 
-  // Create namespace
-  window.TransfersUtils = window.TransfersUtils || {};
-
-  // ===== UTILITY FUNCTIONS ===== //
-
-  /**
-   * Format numbers with thousands separator
-   * @param {number|string} num - Number to format
-   * @param {number} decimals - Number of decimal places (default: 0)
-   * @returns {string} Formatted number
-   */
-  TransfersUtils.formatNumber = function(num, decimals = 0) {
-    const number = parseFloat(num) || 0;
-    return number.toLocaleString('en-NZ', {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals
-    });
+  // --- Formatters ---
+  TransfersUtils.formatNumber = function (num, decimals) {
+    var n = Number(num) || 0;
+    var d = Number.isInteger(decimals) ? decimals : 0;
+    return n.toLocaleString('en-NZ', { minimumFractionDigits: d, maximumFractionDigits: d });
   };
 
-  /**
-   * Format currency values
-   * @param {number|string} amount - Amount to format
-   * @param {string} currency - Currency code (default: 'NZD')
-   * @returns {string} Formatted currency
-   */
-  TransfersUtils.formatCurrency = function(amount, currency = 'NZD') {
-    const number = parseFloat(amount) || 0;
-    return new Intl.NumberFormat('en-NZ', {
-      style: 'currency',
-      currency: currency
-    }).format(number);
+  TransfersUtils.formatCurrency = function (amount, currency) {
+    var n = Number(amount) || 0;
+    var c = currency || 'NZD';
+    return new Intl.NumberFormat('en-NZ', { style: 'currency', currency: c }).format(n);
   };
 
-  /**
-   * Format dates consistently across components
-   * @param {string|Date} date - Date to format
-   * @param {object} options - Formatting options
-   * @returns {string} Formatted date
-   */
-  TransfersUtils.formatDate = function(date, options = {}) {
-    const defaults = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    };
-    
-    const formatOptions = Object.assign(defaults, options);
-    const dateObj = date instanceof Date ? date : new Date(date);
-    
-    if (isNaN(dateObj.getTime())) {
-      return 'Invalid date';
-    }
-    
-    return dateObj.toLocaleString('en-NZ', formatOptions);
+  TransfersUtils.formatDate = function (date, options) {
+    var defaults = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+    var fmt = Object.assign({}, defaults, options || {});
+    var d = (date instanceof Date) ? date : new Date(date);
+    return isNaN(d.getTime()) ? 'Invalid date' : d.toLocaleString('en-NZ', fmt);
   };
 
-  /**
-   * Debounce function calls
-   * @param {Function} func - Function to debounce
-   * @param {number} wait - Wait time in milliseconds
-   * @returns {Function} Debounced function
-   */
-  TransfersUtils.debounce = function(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
+  // --- Helpers ---
+  TransfersUtils.debounce = function (fn, wait) {
+    var t; return function () { var ctx = this, args = arguments;
+      clearTimeout(t); t = setTimeout(function () { fn.apply(ctx, args); }, wait);
     };
   };
 
-  /**
-   * Show toast notification
-   * @param {string} message - Message to show
-   * @param {string} type - Type: success, warning, error, info
-   * @param {number} duration - Duration in milliseconds (default: 4000)
-   */
-  TransfersUtils.showToast = function(message, type = 'info', duration = 4000) {
-    const toast = $(`
-      <div class="tfx-toast tfx-toast--${type}" role="alert">
-        <div class="tfx-toast__content">
-          <i class="tfx-toast__icon fa fa-${this.getToastIcon(type)}"></i>
-          <span class="tfx-toast__message">${message}</span>
-          <button class="tfx-toast__close" aria-label="Close">
-            <i class="fa fa-times"></i>
-          </button>
-        </div>
-      </div>
-    `);
-
-    // Add to container or create one
-    let container = $('.tfx-toast-container');
-    if (!container.length) {
-      container = $('<div class="tfx-toast-container"></div>').appendTo('body');
-    }
-    
-    container.append(toast);
-    
-    // Auto-hide after duration
-    setTimeout(() => {
-      toast.fadeOut(300, () => toast.remove());
-    }, duration);
-    
-    // Manual close
-    toast.find('.tfx-toast__close').on('click', () => {
-      toast.fadeOut(300, () => toast.remove());
-    });
-  };
-
-  /**
-   * Get appropriate icon for toast type
-   * @param {string} type - Toast type
-   * @returns {string} FontAwesome icon class
-   */
-  TransfersUtils.getToastIcon = function(type) {
-    const icons = {
-      success: 'check-circle',
-      warning: 'exclamation-triangle',
-      error: 'times-circle',
-      info: 'info-circle'
-    };
-    return icons[type] || 'info-circle';
-  };
-
-  /**
-   * Handle AJAX errors consistently
-   * @param {object} xhr - XMLHttpRequest object
-   * @param {string} context - Context description for error
-   */
-  TransfersUtils.handleAjaxError = function(xhr, context = '') {
-    let message = 'An unexpected error occurred';
-    
-    if (xhr.responseJSON && xhr.responseJSON.error) {
-      message = xhr.responseJSON.error.message || message;
-    } else if (xhr.responseText) {
-      try {
-        const response = JSON.parse(xhr.responseText);
-        message = response.error || message;
-      } catch (e) {
-        // Not JSON, use status text
-        message = xhr.statusText || message;
-      }
-    }
-    
-    if (context) {
-      message = `${context}: ${message}`;
-    }
-    
-    this.showToast(message, 'error');
-    console.error('AJAX Error:', {xhr, context, message});
-  };
-
-  /**
-   * Validate form fields
-   * @param {jQuery} $form - Form element
-   * @returns {object} Validation result with isValid and errors
-   */
-  TransfersUtils.validateForm = function($form) {
-    const errors = [];
-    
-    // Check required fields
-    $form.find('[required]').each(function() {
-      const $field = $(this);
-      const value = $field.val().trim();
-      const label = $field.attr('aria-label') || $field.attr('name') || 'Field';
-      
-      if (!value) {
-        errors.push(`${label} is required`);
-        $field.addClass('is-invalid');
-      } else {
-        $field.removeClass('is-invalid');
-      }
-    });
-    
-    // Check email fields
-    $form.find('[type="email"]').each(function() {
-      const $field = $(this);
-      const value = $field.val().trim();
-      
-      if (value && !TransfersUtils.isValidEmail(value)) {
-        errors.push('Please enter a valid email address');
-        $field.addClass('is-invalid');
-      }
-    });
-    
-    return {
-      isValid: errors.length === 0,
-      errors: errors
-    };
-  };
-
-  /**
-   * Check if email is valid
-   * @param {string} email - Email to validate
-   * @returns {boolean} Is valid email
-   */
-  TransfersUtils.isValidEmail = function(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
-
-  /**
-   * Generate unique ID for components
-   * @param {string} prefix - ID prefix
-   * @returns {string} Unique ID
-   */
-  TransfersUtils.generateId = function(prefix = 'tfx') {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  };
-
-  /**
-   * Copy text to clipboard
-   * @param {string} text - Text to copy
-   * @returns {Promise} Promise resolving when copy is complete
-   */
-  TransfersUtils.copyToClipboard = function(text) {
+  TransfersUtils.copyToClipboard = function (text) {
     if (navigator.clipboard && window.isSecureContext) {
       return navigator.clipboard.writeText(text);
-    } else {
-      // Fallback for older browsers
-      return new Promise((resolve, reject) => {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        
-        try {
-          document.execCommand('copy');
-          textArea.remove();
-          resolve();
-        } catch (error) {
-          textArea.remove();
-          reject(error);
-        }
-      });
     }
+    return new Promise(function (resolve, reject) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = String(text || '');
+        ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '-9999px';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        var ok = document.execCommand('copy'); ta.remove(); ok ? resolve() : reject(new Error('Copy failed'));
+      } catch (e) { reject(e); }
+    });
   };
 
-  // ===== COMPONENT HELPERS ===== //
-
-  /**
-   * Initialize draft status component
-   * @param {string} selector - CSS selector for draft status element
-   * @param {object} options - Configuration options
-   */
-  TransfersUtils.initDraftStatus = function(selector, options = {}) {
-    const defaults = {
-      autoSave: false,
-      saveInterval: 10000, // 10 seconds
-      states: {
-        idle: 'Idle',
-        saving: 'Saving...',
-        saved: 'Saved',
-        error: 'Error'
-      }
-    };
-    
-    const config = Object.assign(defaults, options);
-    const $element = $(selector);
-    
-    if (!$element.length) return;
-    
-    // Store config on element
-    $element.data('draft-config', config);
-    
-    // Auto-save functionality
-    if (config.autoSave && config.saveCallback) {
-      setInterval(() => {
-        TransfersUtils.updateDraftStatus(selector, 'saving');
-        config.saveCallback()
-          .then(() => TransfersUtils.updateDraftStatus(selector, 'saved'))
-          .catch(() => TransfersUtils.updateDraftStatus(selector, 'error'));
-      }, config.saveInterval);
-    }
+  TransfersUtils.getToastIcon = function (type) {
+    return ({ success: 'check-circle', warning: 'exclamation-triangle', error: 'times-circle', info: 'info-circle' }[type] || 'info-circle');
   };
 
-  /**
-   * Update draft status display
-   * @param {string} selector - CSS selector for draft status element
-   * @param {string} state - New state (idle, saving, saved, error)
-   * @param {string} customText - Custom status text (optional)
-   */
-  TransfersUtils.updateDraftStatus = function(selector, state, customText = null) {
-    const $element = $(selector);
-    const config = $element.data('draft-config') || {};
-    
-    // Update classes
-    $element
-      .removeClass('status-idle status-saving status-saved status-error')
-      .addClass(`status-${state}`)
-      .attr('data-state', state);
-    
-    // Update text
-    const text = customText || config.states[state] || state;
-    $element.find('.pill-text').text(text);
-    
-    // Update last saved timestamp
-    if (state === 'saved') {
-      const timestamp = TransfersUtils.formatDate(new Date(), {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-      $('#draft-last-saved').text(timestamp);
+  // --- Toast (bridges to PackToast or CIS.ui.toast) ---
+  TransfersUtils.showToast = function (message, type, duration) {
+    type = type || 'info';
+    if (window.PackToast && typeof window.PackToast.show === 'function') {
+      return window.PackToast.show(String(message), type, { timeout: duration || 4000 });
     }
+    if (window.CIS && window.CIS.ui && typeof window.CIS.ui.toast === 'function') {
+      return window.CIS.ui.toast(message, type);
+    }
+    try { alert(String(message)); } catch (_) {}
   };
 
-  // ===== INITIALIZATION ===== //
-  
-  // Set up global AJAX error handling
-  $(document).ajaxError(function(event, xhr, settings) {
-    if (xhr.status !== 200) {
-      TransfersUtils.handleAjaxError(xhr, 'Request failed');
+  // --- AJAX error -> toast ---
+  TransfersUtils.handleAjaxError = function (xhr, context) {
+    var msg = 'An unexpected error occurred';
+    if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+      msg = xhr.responseJSON.error.message || xhr.responseJSON.error || msg;
+    } else if (xhr && xhr.responseText) {
+      try { var p = JSON.parse(xhr.responseText); msg = (p && (p.error || p.message)) || msg; } catch (_) { msg = xhr.statusText || msg; }
     }
+    if (context) msg = context + ': ' + msg;
+    TransfersUtils.showToast(msg, 'error');
+    console.error('[AJAX ERROR]', { xhr: xhr, context: context, message: msg });
+  };
+
+  // --- Simple form validator (required + email) ---
+  TransfersUtils.validateForm = function ($form) {
+    var errors = [];
+    $form.find('[required]').each(function () {
+      var $f = $(this), v = String(($f.val() || '')).trim();
+      var label = $f.attr('aria-label') || $f.attr('name') || 'Field';
+      if (!v) { errors.push(label + ' is required'); $f.addClass('is-invalid'); } else { $f.removeClass('is-invalid'); }
+    });
+    $form.find('[type="email"]').each(function () {
+      var $f = $(this), v = String(($f.val() || '')).trim();
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { errors.push('Please enter a valid email address'); $f.addClass('is-invalid'); }
+    });
+    return { isValid: errors.length === 0, errors: errors };
+  };
+
+  // Global AJAX error -> toast
+  $(document).ajaxError(function (_e, xhr, settings) {
+    if (xhr && xhr.status !== 200) TransfersUtils.handleAjaxError(xhr, 'Request failed ' + (settings && settings.url ? '(' + settings.url + ')' : ''));
   });
 
-  // Add toast container styles if not present
-  if (!$('#tfx-toast-styles').length) {
-    $('<style id="tfx-toast-styles">')
-      .text(`
-        .tfx-toast-container {
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          z-index: 9999;
-        }
-        .tfx-toast {
-          margin-bottom: 10px;
-          min-width: 300px;
-          max-width: 500px;
-        }
-      `)
-      .appendTo('head');
-  }
-
-  // Ready
-  console.log('[Transfers/Utils] Initialized successfully');
-
+  console.log('[Transfers/Utils] Ready');
 })(window, window.jQuery);

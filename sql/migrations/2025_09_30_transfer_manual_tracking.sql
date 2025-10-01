@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `transfer_manual_tracking` (
+  `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `transfer_id`      BIGINT UNSIGNED NOT NULL,
+  `mode`             ENUM('manual','internal') NOT NULL DEFAULT 'manual',
+  `tracking`         VARCHAR(64) NULL,
+  `carrier_id`       BIGINT UNSIGNED NULL,
+  `carrier_code`     VARCHAR(48) NOT NULL,
+  `carrier_name`     VARCHAR(120) NOT NULL,
+  `notes`            VARCHAR(300) NULL,
+  `idem_key`         VARCHAR(120) NULL,
+  `body_hash`        CHAR(64) NOT NULL,
+  `created_by`       BIGINT UNSIGNED NOT NULL,
+  `created_at`       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `deleted_at`       TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_transfer_tracking` (`transfer_id`,`tracking`,`mode`,`deleted_at`),
+  KEY `idx_transfer` (`transfer_id`),
+  KEY `idx_idem` (`transfer_id`,`idem_key`),
+  KEY `idx_body_hash` (`transfer_id`,`body_hash`),
+  KEY `idx_carrier_code` (`carrier_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

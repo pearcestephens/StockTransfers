@@ -1,0 +1,122 @@
+/* ==========================================================================
+   Transfers — Utilities & Layout Primitives
+   Implements charter patterns: stack / cluster / switch / flow / auto-grid
+   Layered approach: reset, base, components, utilities
+   NOTE: Keep file <5KB; additive only. No global overrides.
+   Last Modified: 2025-10-01
+   ========================================================================== */
+
+@layer utilities {
+  /* ------------------ Design Tokens (Additive) ------------------ */
+  :root {
+    --space: 4px;
+    --space-1: calc(var(--space) * 1);
+    --space-2: calc(var(--space) * 2);
+    --space-3: calc(var(--space) * 3);
+    --space-4: calc(var(--space) * 4);
+    --space-5: calc(var(--space) * 5);
+    --space-6: calc(var(--space) * 6);
+    --radius-1: 6px; --radius-2: 12px;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.06);
+    --shadow-2: 0 4px 10px -2px rgba(0,0,0,.14);
+    --brand: var(--tfx-primary, #2563eb);
+    --text: var(--tfx-gray-800, #1f2937);
+    --muted: var(--tfx-text-muted, #6b7280);
+    --bg: var(--tfx-white, #ffffff);
+    --border: var(--tfx-border, #e5e7eb);
+    --focus-ring: 2px solid var(--brand);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text: var(--tfx-gray-100, #f3f4f6);
+      --bg: var(--tfx-gray-900, #0f172a);
+      --border: var(--tfx-gray-700, #374151);
+      --muted: var(--tfx-gray-400, #9ca3af);
+      --shadow-1: 0 1px 2px rgba(0,0,0,.5);
+      --shadow-2: 0 4px 14px -2px rgba(0,0,0,.6);
+    }
+  }
+
+  @media (forced-colors: active) {
+    :root { --shadow-1: none; --shadow-2: none; }
+  }
+
+  /* ------------------ Accessibility Focus Normalizer ------------------ */
+  .u-focusable:focus-visible, .u-focus-visible:focus-visible, a:focus-visible, button:focus-visible,
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* ------------------ Stack (vertical rhythm) ------------------ */
+  .u-stack { display:flex; flex-direction:column; }
+  .u-stack > * + * { margin-top: var(--gap, var(--space-3)); }
+
+  /* ------------------ Cluster (wrap & align) ------------------ */
+  .u-cluster { display:flex; flex-wrap:wrap; gap: var(--gap, var(--space-2)); align-items: var(--align, flex-start); }
+
+  /* ------------------ Flow (intrinsic vertical spacing) ------------------ */
+  .u-flow > * + * { margin-top: var(--flow-space, var(--space-3)); }
+
+  /* ------------------ Auto Grid (responsive cards) ------------------ */
+  .u-auto-grid { --min:220px; display:grid; gap: var(--gap, var(--space-3)); grid-template-columns: repeat(auto-fit, minmax(min(var(--min),100%), 1fr)); }
+
+  /* ------------------ Switch Layout (sidebar/content) ------------------ */
+  /* Mark container explicitly to allow container queries */
+  [data-container] { container-type: inline-size; }
+  .u-switch { display:grid; gap: var(--gap, var(--space-5)); grid-template-columns: 320px 1fr; align-items:start; }
+  @container (max-width: 900px) { .u-switch { grid-template-columns: 1fr; } }
+
+  /* ------------------ Muted & Assistive Text ------------------ */
+  .u-muted { color: var(--muted); }
+  .u-text-sm { font-size: .875rem; line-height:1.4; }
+  .u-text-xs { font-size: .75rem; line-height:1.3; }
+
+  /* ------------------ Elevation Utility ------------------ */
+  .u-elevate { box-shadow: var(--shadow-1); transition: box-shadow .16s ease, transform .16s ease; }
+  .u-elevate:hover { box-shadow: var(--shadow-2); }
+  .u-elevate:active { transform: translateY(1px); }
+
+  /* ------------------ Focus Ring Override Helper ------------------ */
+  .u-focus-ring { outline: var(--focus-ring); outline-offset:2px; }
+
+  /* ------------------ Visually Hidden (accessible) ------------------ */
+  .u-vh { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+  /* ------------------ Spacing Helpers ------------------ */
+  .u-gap-1 { --gap: var(--space-1); }
+  .u-gap-2 { --gap: var(--space-2); }
+  .u-gap-3 { --gap: var(--space-3); }
+  .u-gap-4 { --gap: var(--space-4); }
+  .u-gap-5 { --gap: var(--space-5); }
+  .u-gap-6 { --gap: var(--space-6); }
+
+  /* Flow spacing variants */
+  .u-flow-tight { --flow-space: var(--space-2); }
+  .u-flow-loose { --flow-space: var(--space-5); }
+
+  /* ------------------ State Data Attribute Hooks ------------------ */
+  [data-state="loading"] { cursor:progress; }
+  [data-state="disabled"] { opacity:.55; pointer-events:none; }
+
+  /* ------------------ Skeleton Primitives ------------------ */
+  .u-skel { position:relative; overflow:hidden; background:linear-gradient(90deg, var(--tfx-gray-200, #e5e7eb) 25%, var(--tfx-gray-100, #f3f4f6) 37%, var(--tfx-gray-200, #e5e7eb) 63%); background-size:400% 100%; animation: u-skel 1.2s ease-in-out infinite; color:transparent; }
+  .u-skel--inline { display:inline-block; }
+  @keyframes u-skel { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+
+  /* Skeleton size helpers */
+  .u-skel-line { height:1em; border-radius:4px; }
+  .u-skel-sm { height:.75em; }
+  .u-skel-lg { height:1.25em; }
+
+  /* ------------------ Interactive Regions ------------------ */
+  .u-interactive { position:relative; transition:background-color .14s ease, color .14s ease; }
+  .u-interactive:hover { background:rgba(0,0,0,.04); }
+  @media (prefers-color-scheme: dark) { .u-interactive:hover { background:rgba(255,255,255,.06); } }
+
+  /* ------------------ High Contrast Adjustments ------------------ */
+  @media (forced-colors: active) {
+    .u-elevate, .u-interactive { box-shadow:none !important; }
+  }
+}

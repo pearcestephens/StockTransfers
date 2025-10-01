@@ -30,15 +30,30 @@ declare(strict_types=1);
 
 require __DIR__.'/_lib/validate.php';
 cors_and_headers([
-  'allow_methods' => 'POST, OPTIONS',
+  'allow_methods' => 'GET, POST, OPTIONS',
   'allow_headers' => 'Content-Type, X-API-Key',
   'max_age'       => 600
 ]);
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { http_response_code(204); exit; }
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST')     { fail('METHOD_NOT_ALLOWED','POST only',405); }
 
-$in = json_input();
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if (!in_array($method, ['GET', 'POST'])) { fail('METHOD_NOT_ALLOWED','GET or POST only',405); }
+
+// Handle both GET and POST inputs
+if ($method === 'GET') {
+  $transferId = (int)($_GET['transfer'] ?? 0);
+  if (!$transferId) { fail('MISSING_PARAM','transfer ID required'); }
+  
+  // For GET requests, we'll use default values and fetch transfer data
+  $in = [
+    'carrier' => $_GET['carrier'] ?? 'nzc',
+    'container' => $_GET['container'] ?? 'box',
+    'total_kg' => (float)($_GET['total_kg'] ?? 1.0) // Default 1kg if not specified
+  ];
+} else {
+  $in = json_input();
+}
 $carrier   = strtolower((string)($in['carrier'] ?? 'nzc'));
 $container = strtolower((string)($in['container'] ?? 'box'));
 $totalKg   = (float)($in['total_kg'] ?? 0);

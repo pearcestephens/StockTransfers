@@ -1,32 +1,54 @@
 <?php
 declare(strict_types=1);
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 use Modules\Transfers\Stock\Services\TransfersService;
 use Modules\Transfers\Stock\Services\PackLockService;
 use Modules\Transfers\Stock\Services\LockAuditService;
 
-function jexit(array $o){ echo json_encode($o, JSON_UNESCAPED_SLASHES); exit; }
+// Unified response helpers --------------------------------------------------
+function rsp(array $env, int $code=200): void { http_response_code($code); echo json_encode($env, JSON_UNESCAPED_SLASHES); exit; }
+function rid(): string { try { return bin2hex(random_bytes(8)); } catch(Throwable) { return dechex(mt_rand()); } }
 
-if(!isset($_SESSION['userID'])) jexit(['success'=>false,'error'=>'unauth']);
+// Auth ----------------------------------------------------------------------
+if(!isset($_SESSION['userID'])){
+  rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'UNAUTH','message'=>'Login required']],401);
+}
 $uid=(int)$_SESSION['userID'];
 
-$raw = file_get_contents('php://input');
-$payload = [];
-if($raw){ $dec=json_decode($raw,true); if(is_array($dec)) $payload=$dec; }
-if(!$payload){ $payload = $_POST; }
-$transferId = (int)($payload['transfer_id'] ?? 0);
-if($transferId<=0) jexit(['success'=>false,'error'=>'missing_transfer']);
+// Method guard ---------------------------------------------------------------
+if(($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST'){
+  rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'METHOD_NOT_ALLOWED','message'=>'POST only']],405);
+}
 
-// Enforce active lock ownership
+// Parse body (JSON first, then x-www-form)
+$raw = file_get_contents('php://input') ?: '';
+$payload = [];
+if($raw !== ''){ $dec=json_decode($raw,true); if(is_array($dec)) $payload=$dec; }
+if(!$payload) $payload = $_POST; // fallback legacy
+
+$transferId = (int)($payload['transfer_id'] ?? 0);
+if($transferId<=0){ rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'MISSING_TRANSFER','message'=>'transfer_id required']],400); }
+
+// Acquire / verify lock -----------------------------------------------------
 $lockSvc = new PackLockService();
 $lock = $lockSvc->getLock($transferId);
 if(!$lock || (int)$lock['user_id']!==$uid){
-    jexit(['success'=>false,'error'=>'lock_required','detail'=>'Obtain exclusive lock before saving pack']);
+  // 423 Locked semantics
+  rsp([
+    'ok'=>false,
+    'request_id'=>rid(),
+    'error'=>[
+      'code'=>'LOCK_REQUIRED',
+      'message'=>'Obtain exclusive lock before saving pack',
+      'details'=>['held_by'=>$lock['user_id'] ?? null]
+    ]
+  ],423);
 }
 
-// Actual save (re-use TransfersService->savePack contract)
+// Build domain data ---------------------------------------------------------
 $data = [
   'items'    => $payload['items'] ?? [],
   'packages' => $payload['packages'] ?? [],
@@ -34,14 +56,40 @@ $data = [
   'notes'    => $payload['notes'] ?? ''
 ];
 
-$svc = new TransfersService();
-$res = $svc->savePack($transferId, $data, $uid);
+// Idempotency (hash of logical content) -------------------------------------
+$idemKey = (string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? $_SERVER['HTTP_X_IDEMPOTENCY_KEY'] ?? '');
+$bodyHash = hash('sha256', json_encode($data));
+// (Future) store/replay can be injected here using shared IdempotencyStore
+
+try {
+  $svc = new TransfersService();
+  $res = $svc->savePack($transferId, $data, $uid); // expected legacy shape { success:bool, error? }
+} catch(Throwable $e) {
+  rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'EXCEPTION','message'=>$e->getMessage()]],500);
+}
 
 $audit = new LockAuditService();
 if(!($res['success']??false)){
-  $audit->lockRelease($transferId,$uid,false); // optional: keep lock; here just record context
-  jexit($res);
+  $audit->lockAcquire($transferId,$uid,false); // annotate failed attempt
+  // Provide unified envelope AND legacy (feature flag via ?legacy=1)
+  $env = ['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'SAVE_FAILED','message'=>$res['error'] ?? 'Save failed']];
+  if(isset($_GET['legacy']) && $_GET['legacy']==='1'){ $legacy=$res; echo json_encode($legacy, JSON_UNESCAPED_SLASHES); exit; }
+  rsp($env,200);
 }
-$audit->lockAcquire($transferId,$uid,true); // reuse to annotate pack save context
-jexit($res);
+
+$audit->lockAcquire($transferId,$uid,true); // annotate success
+
+$responseData = [
+  'transfer_id'=>$transferId,
+  'saved'=>true,
+  'idempotency_key'=>$idemKey?:null,
+  'hash'=>$bodyHash
+];
+
+// Legacy compatibility toggle
+if(isset($_GET['legacy']) && $_GET['legacy']==='1'){
+  echo json_encode($res, JSON_UNESCAPED_SLASHES); exit;
+}
+
+rsp(['ok'=>true,'request_id'=>rid(),'data'=>$responseData]);
 ?>

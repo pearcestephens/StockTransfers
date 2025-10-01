@@ -11,25 +11,50 @@ final class TransferLogger
 
     public function __construct()
     {
-        // Prefer your default Core\DB::instance(); fallback only if needed.
-        if (class_exists('\Core\DB') && method_exists('\Core\DB', 'instance')) {
-            $pdo = \Core\DB::instance();
-        } elseif (function_exists('cis_pdo')) {
-            $pdo = cis_pdo();
-        } elseif (class_exists('\DB') && method_exists('\DB', 'instance')) {
-            $pdo = \DB::instance();
-        } elseif (!empty($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
-            $pdo = $GLOBALS['pdo'];
-        } else {
-            throw new \RuntimeException('DB not initialized — include /app.php before using services.');
-        }
-
+        // Use the CIS PDO connection function
+        $pdo = cis_pdo();
+        
         if (!$pdo instanceof PDO) {
             throw new \RuntimeException('DB provider did not return a PDO instance.');
         }
 
         $this->db = $pdo;
         $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->createTablesIfNotExists();
+    }
+    
+    private function createTablesIfNotExists(): void
+    {
+        try {
+            // Create transfer logs table
+            $this->db->exec("
+                CREATE TABLE IF NOT EXISTS transfer_logs (
+                  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                  transfer_id      INT UNSIGNED NULL,
+                  shipment_id      INT UNSIGNED NULL,
+                  item_id          INT UNSIGNED NULL,
+                  parcel_id        INT UNSIGNED NULL,
+                  staff_transfer_id INT UNSIGNED NULL,
+                  event_type       VARCHAR(100) NOT NULL,
+                  event_data       JSON NULL,
+                  actor_user_id    INT UNSIGNED NULL,
+                  actor_role       VARCHAR(50) NULL,
+                  severity         ENUM('debug','info','warning','error','critical') NOT NULL DEFAULT 'info',
+                  source_system    VARCHAR(50) NOT NULL DEFAULT 'CIS',
+                  trace_id         VARCHAR(100) NULL,
+                  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  customer_id      INT UNSIGNED NULL,
+                  INDEX (transfer_id, event_type),
+                  INDEX (shipment_id),
+                  INDEX (actor_user_id, created_at),
+                  INDEX (created_at),
+                  INDEX (event_type, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (\Throwable $e) {
+            // Log but don't fail - tables may already exist
+            error_log('TransferLogger table creation warning: ' . $e->getMessage());
+        }
     }
 
     public function log(string $eventType, array $opts = []): void

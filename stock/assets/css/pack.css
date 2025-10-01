@@ -1,0 +1,80 @@
+/* ========== Pack UI – Unified Clean Styles ========== */
+
+/* Variables (augment shared variables, do not duplicate) */
+:root {
+  --tfx-muted:#6c757d; --tfx-success:#28a745; --tfx-warning:#fd7e14; --tfx-danger:#dc3545;
+  --tfx-info:#17a2b8; --tfx-border:#dee2e6;
+  --pill-idle-bg:#f1f3f5; --pill-idle-fg:#495057;
+  --pill-saving-bg:#fff3cd; --pill-saving-fg:#856404;
+  --pill-saved-bg:#f1f5f9; --pill-saved-fg:#334155;
+  --pill-error-bg:#ffe3e3; --pill-error-fg:#c92a2a;
+}
+
+/* Tight cards / small paddings */
+.tfx-card-tight .card-body { padding: .75rem 1rem; }
+
+/* Remove item button + numeric inputs */
+.tfx-remove-btn {
+  background:none; border:1px solid #ced4da; color:#6c757d; width:26px; height:26px;
+  border-radius:6px; display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:13px;
+}
+.tfx-remove-btn:hover { background:#ffecec; border-color:#f5b5b5; color:#c92a2a; }
+.tfx-num { max-width: 80px; text-align: center; }
+
+/* Counted value cell + print value overlay */
+.counted-td { position:relative; }
+.counted-print-value { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-weight:700; pointer-events:none; display:none; }
+@media print { .counted-td .tfx-num { display:none !important; } .counted-td .counted-print-value { display:inline !important; } }
+
+/* Row matching states */
+tr.qty-match    { background: rgba(0,200,83,.10); }
+tr.qty-mismatch { background: rgba(255,82,82,.12); }
+tr.qty-neutral  { background: transparent; }
+tr.qty-match td:first-child    { box-shadow: inset 3px 0 0 #05a845; }
+tr.qty-mismatch td:first-child { box-shadow: inset 3px 0 0 #d93030; }
+
+/* Autosave pill (no heavy animation) */
+.autosave-pill {
+  display:inline-flex; align-items:center; border-radius:12px; padding:3px 8px;
+  font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; transition:.2s;
+}
+.autosave-pill .pill-icon { width:6px; height:6px; border-radius:50%; margin-right:5px; background-color:currentColor; }
+.autosave-pill.status-idle   { background: var(--pill-idle-bg);   color: var(--pill-idle-fg); }
+.autosave-pill.status-dirty  { background: var(--pill-saving-bg); color: var(--pill-saving-fg); }
+.autosave-pill.status-saving { background: var(--pill-saving-bg); color: var(--pill-saving-fg); }
+.autosave-pill.status-saved  { background: var(--pill-saved-bg);  color: var(--pill-saved-fg); }
+.autosave-pill.status-error  { background: var(--pill-error-bg);  color: var(--pill-error-fg); }
+
+/* Rate cards (Dispatch side) */
+.rates { display:grid; gap:10px; }
+.rate {
+  border:1px solid #e5e7eb; border-radius:14px; padding:12px; cursor:pointer; background:#fff; transition:transform .05s;
+}
+.rate:hover { transform: translateY(-1px); }
+.rate.is-active { outline:2px solid #6b8bff; outline-offset:2px; background:linear-gradient(180deg,#fff,#f7f7ff); }
+.rhead { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.rleft { display:flex; align-items:center; gap:10px; }
+.rlogo { width:42px; height:42px; border-radius:10px; display:grid; place-items:center; color:#fff; font-weight:700; }
+.rlogo.nzpost { background:#d5002b; } .rlogo.nzc { background:#00a2b8; }
+.rtitle { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.rprice { font-weight:700; font-size:18px; }
+.rmeta  { display:flex; gap:12px; align-items:center; margin-top:6px; color:#677089; font-size:12px; }
+.badge  { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:11px; }
+
+/* Manual tracking list */
+.tracking-list { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.tracking-item {
+  display:flex; align-items:center; gap:8px; border:1px dashed rgba(17,24,49,.25); border-radius:10px; background:#fff; padding:6px 8px;
+}
+.tracking-item .value { flex:1 1 auto; overflow-wrap:anywhere; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; color:#1a2550; }
+.tracking-remove { border:0; background:transparent; color:#8a96bc; cursor:pointer; font-size:18px; line-height:1; }
+.tracking-remove:hover { color:#ef4444; }
+
+/* Print optimisations */
+@page { size: A4; margin: 14mm 10mm 16mm; }
+@media print {
+  html, body { background:#fff !important; color:#000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .app-header, .sidebar, .breadcrumb, .btn, [role="button"], footer.app-footer, .toast, .nav, .pace, .pace-activity, .pace-progress,
+  .tfx-remove-btn, .tfx-btn, i.fa { display:none !important; }
+  .container-fluid { padding:0 !important; margin:0

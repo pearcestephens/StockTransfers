@@ -2,12 +2,17 @@
 declare(strict_types=1);
 namespace Modules\Transfers\Stock\Services;
 
-use PDO; use Core\DB; use Throwable;
+use PDO;
+use Throwable;
 
 final class StaffNameResolver
 {
     private PDO $db;
-    public function __construct(){ $this->db = DB::instance(); }
+    
+    public function __construct()
+    { 
+        $this->db = cis_pdo(); 
+    }
     public function name(int $userId): ?string
     {
         if($userId<=0) return null;

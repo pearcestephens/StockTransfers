@@ -69,3 +69,53 @@ Keys relied on by front-end scripts:
 - `stock/tools/carrier_pack_validator.php` for validating payloads against carrier capabilities.
 - `output.php` can snapshot directories for quick audits (remember `ext`, `dir`, `search` filters).
 - TODO flagged during review: unify DB access layer (PDO vs mysqli), strengthen guardian tiers, expand tests around packaging heuristics.
+
+## Pack & Send Pipeline Overlay (2025-09 late additions)
+### Features Implemented
+- Full-screen overlay `#queueOverlay` with sequential steps: validate → lock → commit → vend → print → done.
+- Pipeline Reference (`X-Pipeline-Ref`) + Request ID (`X-Request-ID`) injected into pack/send POST. Both exposed in UI (badge + rail copy buttons) and should be persisted server-side for audit correlation.
+- PulseLock Status Rail (`#pl-rail`) surfaces GREEN / AMBER / RED with plain-English states: Operational / Degraded – safe-mode / Critical – site locked.
+- Dim layer `#plDim` appears for amber/red; red state locks site interactions except overlay controls.
+- Global failure escalation (`CISGuard.fatal`) sets `body.pl-failure`, disables forms, and persists lock metadata in `sessionStorage.PL_LOCK` until green recovery.
+- Diagnostics copy button on failure: captures ref, rid, message, timestamp, user agent.
+- Confetti + aura animations only on full success (green path). No confetti on failure.
+
+### Authenticity / FSM
+- Animations halt immediately on failure; last running step marked `.err` with raw error message (e.g. JSON parse / validation).
+- Steps do not auto-advance after an error (prevents “demo” vibe).
+- Test mode variable `TEST_VEND_ONLY` (front-end in `pack.view.php`) currently TRUE to stop progression after vend stage while validating real Vend integration. Print / done steps display override text in this mode.
+
+### Headers & Idempotency
+- Front-end now ensures: `Idempotency-Key`, `X-Request-ID`, `X-Pipeline-Ref` sent with payload.
+- Server `pack_send.php` already handles idempotent replay; orchestrator extended to include vend mirror metadata in response (`vend_transfer_id`, `vend_number`, `vend_url`, `vend_warning`).
+
+### Vend Mirror Stub
+- `VendServiceImpl::upsertManualConsignment()` currently writes stub row into `transfer_vend_mirror` (DDL on demand) with status=`stubbed` and logs audit `vend_upsert_stub`.
+- No live Vend API call yet; fields remain null until real implementation.
+
+### Persistence & Recovery
+- Red lock persisted in `sessionStorage.PL_LOCK` {state, reason, ref, rid, ts}. Cleared automatically on successful run.
+- Planned enhancement: early page boot restoration (currently restoration occurs inside `runSync` path; add boot hook later).
+
+### Next Steps (Shortlist)
+1. Disable `TEST_VEND_ONLY` after first confirmed vend mirror row matches real Vend consignment creation.
+2. Replace Vend stub with real API integration (create/update consignment, capture Vend ID/number/URL, handle rate limiting & 429 backoff with queue fallback).
+3. Add backend step status endpoint or SSE to replace timed front-end loop (true per-step timing + health).
+4. Extend diagnostics to include HTTP status + first 256 chars of raw response when JSON parse fails.
+5. Implement admin override to clear red lock (role-gated) while still logging override event.
+6. Add queue health pre-flight gate (abort pipeline before vend if queue service degraded or circuit breaker open).
+
+### Quick Verification Procedure (Vend Test Mode)
+1. Open pack page; initiate Save Pack / Send.
+2. Observe steps progress to vend; overlay halts with “Label spool deferred (test mode)”.
+3. Check DB: `transfer_vend_mirror` new row (status stubbed) + `transfer_audit_log` entry `vend_upsert_stub`.
+4. Confirm orchestrator response JSON includes vend_* keys (null or stub) and shipment_id.
+5. After live Vend integration: expect vend_transfer_id / vend_number non-null; UI can surface hyperlink (vend_url) in vend step tooltip.
+
+### Known Edge Conditions
+- If PulseLock tier=red at pipeline start, system forces async degrade path (currently not fully implemented; TODO poll job status endpoint).
+- JSON parse failure surfaces generic Unexpected token '<' message (common when server outputs HTML error page); diagnostics button retains raw context via pipeline ref + request ID for log correlation.
+
+### Logging/Audit Tie-ins
+- Audit logger extended implicitly by orchestrator; ensure future vend integration also logs vendor reference IDs.
+- Suggest adding unified audit join (transfer_id + pipeline_ref + request_id) once DB schema updated.

@@ -107,6 +107,11 @@ final class OrchestratorImpl
                 'mode' => $plan->mode,
                 'send_now' => $plan->sendNow,
                 'idempotency_key' => $idemKey ?: null,
+                // Vend mirror metadata (may be null in stub/test mode)
+                'vend_transfer_id' => $vendResult['vend_transfer_id'] ?? null,
+                'vend_number' => $vendResult['vend_number'] ?? null,
+                'vend_url' => $vendResult['vend_url'] ?? null,
+                'vend_warning' => $vendResult['warning'] ?? null,
             ];
 
             $envelope = [

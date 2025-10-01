@@ -1,0 +1,70 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Deprecated</title></head><body style="font-family:Arial;padding:40px;">
+<h1>Deprecated Test Suite</h1>
+<p>This legacy API test harness has been removed as part of production hardening (2025-10-01). Refer to REMOVAL_MANIFEST_2025-10-01.txt for details.</p>
+</body></html>
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = JSON.parse(text);
+                log(`✅ Basic API Success: <pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                
+            } catch (error) {
+                log(`❌ Basic API Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testOwnershipRequest() {
+            log('🔄 Testing ownership request API...');
+            
+            try {
+                const response = await fetch('https://staff.vapeshed.co.nz/modules/transfers/stock/api/_test_ownership_request.php');
+                const text = await response.text();
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = JSON.parse(text);
+                log(`✅ Ownership Request Success: <pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                
+            } catch (error) {
+                log(`❌ Ownership Request Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testAllAPIs() {
+            const apis = [
+                'lock_status.php?transfer_id=1',
+                'lock_requests_pending.php?transfer_id=1',
+                'debug_requests.php'
+            ];
+            
+            for (const api of apis) {
+                log(`🔄 Testing ${api}...`);
+                
+                try {
+                    const response = await fetch(`https://staff.vapeshed.co.nz/modules/transfers/stock/api/${api}`);
+                    const text = await response.text();
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = JSON.parse(text);
+                    log(`✅ ${api} Success: <pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                    
+                } catch (error) {
+                    log(`❌ ${api} Failed: ${error.message}`, 'error');
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+            }
+        }
+        
+        // Auto-run basic test on load
+        document.addEventListener('DOMContentLoaded', testBasicAPI);
+    </script>
+</body>
+</html>

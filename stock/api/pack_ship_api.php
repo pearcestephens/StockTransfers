@@ -33,6 +33,7 @@ declare(strict_types=1);
  *  - ShippingLabelsService exists at ../services/ShippingLabelsService.php
  */
 
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php'; // Sessions, config, autoload
 
 // Map legacy session key userID -> staff_id (compat)

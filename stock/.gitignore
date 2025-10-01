@@ -1,0 +1,33 @@
+# Logs
+logs/
+*.log
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+
+# Temp files
+*.tmp
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# PHP
+vendor/
+composer.lock
+
+# Database
+*.db
+*.sqlite
+
+# Migration scripts (remove after use)
+fix_fingerprint_field.php
+migrate_fingerprint_field.php

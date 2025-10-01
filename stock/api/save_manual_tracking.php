@@ -4,134 +4,142 @@ declare(strict_types=1);
 /**
  * CIS — Save Manual Tracking
  * Path: modules/transfers/stock/api/save_manual_tracking.php
- *
- * Input JSON:
- * {
- *   "transfer_id": int,
- *   "carrier": "nzpost" | "nzc" | "other",
- *   "tracking": string,
- *   "notes": string|null
- * }
- *
- * Success:
- * { "ok": true, "shipment_id": 123, "parcel_id": 456 }
+ * 
+ * SECURITY: Requires valid transfer lock ownership
+ * Submit-only Manual/Internal Tracking Endpoint (idempotent + delete)
+ * New Request (create): { commit:true, transfer_id, mode:'manual'|'internal', tracking?, carrier_id?, carrier_code, notes? }
+ * Delete: POST ?action=delete { id, transfer_id }
+ * Envelope: { ok, request_id, data?|error }
  */
 
-require __DIR__.'/_lib/validate.php'; // cors_and_headers(), json_input(), ok(), fail(), pdo()
+header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
 
-cors_and_headers([
-  'allow_methods' => 'POST, OPTIONS',
-  'allow_headers' => 'Content-Type, X-API-Key',
-  'max_age'       => 600
-]);
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
+require_once __DIR__ . '/_lib/ServerLockGuard.php';
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { http_response_code(204); exit; }
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST')     { fail('METHOD_NOT_ALLOWED','POST only',405); }
+use Modules\Transfers\Stock\Services\PackLockService;
 
-// ---- Parse
-$in = json_input();
-$transferId = (int)($in['transfer_id'] ?? 0);
-$carrier    = strtolower(trim((string)($in['carrier'] ?? '')));
-$tracking   = strtoupper(trim((string)($in['tracking'] ?? '')));
-$notes      = trim((string)($in['notes'] ?? ''));
+$REQ_ID = bin2hex(random_bytes(8));
+function env_ok(array $data): array { return ['ok'=>true,'request_id'=>$GLOBALS['REQ_ID'],'data'=>$data]; }
+function env_err(string $code,string $msg,array $details=[]): array { return ['ok'=>false,'request_id'=>$GLOBALS['REQ_ID'],'error'=>['code'=>$code,'message'=>$msg,'details'=>$details]]; }
+function send(array $e,int $code=200){ http_response_code($code); echo json_encode($e, JSON_UNESCAPED_SLASHES); exit; }
 
-if (!$transferId) fail('MISSING_PARAM','transfer_id required');
-if ($tracking === '') fail('MISSING_PARAM','tracking required');
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') send(env_err('METHOD_NOT_ALLOWED','POST required'),405);
 
-// Validation: tracking pattern (alphanumeric + - _) 4–64 chars
-if (!preg_match('/^[A-Z0-9\-_]{4,64}$/', $tracking)) {
-  fail('INVALID_TRACKING','Tracking must be 4-64 chars (A-Z 0-9 - _)');
+$guard = ServerLockGuard::getInstance();
+$userId = $guard->validateAuthOrDie();
+
+$raw = file_get_contents('php://input') ?: '';
+$in = json_decode($raw,true);
+if (!is_array($in)) send(env_err('INVALID_JSON','JSON body required'),400);
+
+// Delete branch
+if (($_GET['action'] ?? '') === 'delete') {
+  $id = (int)($in['id'] ?? 0); 
+  $transferId = $guard->extractTransferIdOrDie($in);
+  
+  // CRITICAL: Validate lock ownership for delete
+  $guard->validateLockOrDie($transferId, $userId, 'delete tracking');
+  
+  try {
+    $pdo = pdo();
+    $st = $pdo->prepare('UPDATE transfer_manual_tracking SET deleted_at = NOW() WHERE id=:id AND transfer_id=:t AND deleted_at IS NULL');
+    $st->execute([':id'=>$id, ':t'=>$transferId]);
+    send(env_ok(['deleted'=>true]));
+  } catch (Throwable $e) { send(env_err('SERVER_ERROR','Could not delete tracking')); }
 }
-// Optional: reject obviously repeated nonsense (e.g. same char >= 10)
-if (preg_match('/^(\w)\1{9,}$/', $tracking)) {
-  fail('INVALID_TRACKING_PATTERN','Tracking pattern not acceptable');
-}
 
-// Notes length cap
-if (strlen($notes) > 140) {
-  $notes = substr($notes,0,140);
-}
+if (!($in['commit'] ?? false)) send(env_err('SUBMIT_ONLY','This endpoint saves only on explicit submit (commit:true).'));
 
-// Normalise carrier whitelist
-$carrierMap = [
-  'nzp'=>'nzpost','nzpost'=>'nzpost','nz c'=>'nzc','nzc'=>'nzc','nz couriers'=>'nzc','manual'=>'manual','other'=>'manual'
-];
-if ($carrier !== '') {
-  $carrier = $carrierMap[$carrier] ?? $carrier;
-}
-if (!preg_match('/^[a-z0-9_\-]{0,32}$/',$carrier)) $carrier='manual';
+$transferId = $guard->extractTransferIdOrDie($in);
+$mode        = (string)($in['mode'] ?? 'manual');
+$tracking    = isset($in['tracking']) ? strtoupper(trim((string)$in['tracking'])) : null;
+$carrierId   = isset($in['carrier_id']) ? (int)$in['carrier_id'] : null;
+$carrierCode = (string)($in['carrier_code'] ?? '');
+$notes       = isset($in['notes']) ? trim((string)$in['notes']) : null;
 
-// Basic rate limit: max 30 tracking inserts per transfer per hour
+// CRITICAL: Validate lock ownership for create
+$guard->validateLockOrDie($transferId, $userId, 'add tracking');
+
+if (!in_array($mode,['manual','internal'],true)) send(env_err('VALIDATION','mode must be manual|internal'));
+if ($mode==='manual') {
+  if (!$tracking || strlen($tracking)<6) send(env_err('VALIDATION','tracking number looks invalid'));
+  if ($carrierCode==='') send(env_err('VALIDATION','carrier_code required'));
+}
+if ($notes!==null && strlen($notes)>300) $notes = substr($notes,0,300);
+
+$idemKey = trim((string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? ''));
+$bodyHash = hash('sha256', json_encode([$transferId,$mode,$tracking,$carrierId,$carrierCode,$notes]));
+
 try {
-  $pdoTmp = pdo();
-  $rl = $pdoTmp->prepare('SELECT COUNT(*) FROM transfer_parcels p JOIN transfer_shipments s ON s.id=p.shipment_id WHERE s.transfer_id = :t AND p.created_at > (NOW() - INTERVAL 1 HOUR)');
-  $rl->execute([':t'=>$transferId]);
-  $cnt = (int)$rl->fetchColumn();
-  if ($cnt >= 30) fail('RATE_LIMIT','Too many tracking entries recently (limit 30/hr)');
-} catch (Throwable $e) { /* soft fail */ }
+  $pdo = pdo();
 
-$pdo = pdo();
-$pdo->beginTransaction();
-
-try {
-  // 1) Ensure a shipment header exists (courier mode by default)
-  $st = $pdo->prepare("SELECT id FROM transfer_shipments WHERE transfer_id=:t ORDER BY id DESC LIMIT 1");
-  $st->execute([':t'=>$transferId]);
-  $shipmentId = (int)($st->fetchColumn() ?: 0);
-
-  if ($shipmentId <= 0) {
-    $st = $pdo->prepare("
-      INSERT INTO transfer_shipments
-        (transfer_id, delivery_mode, status, packed_at, packed_by, created_at)
-      VALUES
-        (:t, 'courier', 'packed', NOW(), NULL, NOW())
-    ");
-    $st->execute([':t'=>$transferId]);
-    $shipmentId = (int)$pdo->lastInsertId();
+  if ($idemKey !== '') {
+    $st = $pdo->prepare('SELECT * FROM transfer_manual_tracking WHERE transfer_id=:t AND idem_key=:k AND body_hash=:h AND deleted_at IS NULL LIMIT 1');
+    $st->execute([':t'=>$transferId, ':k'=>$idemKey, ':h'=>$bodyHash]);
+    if ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+      send(['ok'=>true,'request_id'=>$REQ_ID,'data'=>format_row($row),'replay'=>true]);
+    }
   }
 
-  // 2) Insert parcel row with tracking
-  $st = $pdo->prepare("
-    INSERT INTO transfer_parcels
-      (shipment_id, box_number, tracking_number, courier, status, created_at)
-    VALUES
-      (:s, 1 + COALESCE((SELECT MAX(box_number) FROM transfer_parcels WHERE shipment_id=:s), 0),
-       :trk, :car, 'labelled', NOW())
-  ");
-    INSERT INTO transfer_parcels
-      (shipment_id, box_number, tracking_number, courier, status, created_at)
-    VALUES
-      (:s, 1 + COALESCE((SELECT MAX(box_number) FROM transfer_parcels WHERE shipment_id=:s), 0),
-       :trk, :car, 'labelled', NOW())
-  ");
+  $carrierName = match(true) {
+    str_starts_with($carrierCode,'NZC') => 'NZ Couriers (GSS)',
+    str_starts_with($carrierCode,'NZP') => 'NZ Post',
+    $carrierCode === 'INTERNAL_DELIVERY' => 'Internal Delivery',
+    default => 'Manual / Other'
+  };
+
+  $st = $pdo->prepare('INSERT INTO transfer_manual_tracking (transfer_id, mode, tracking, carrier_id, carrier_code, carrier_name, notes, idem_key, body_hash, created_by)
+    VALUES (:t,:m,:trk,:cid,:cc,:cname,:notes,:idem,:hash,:u)');
   $st->execute([
-    ':s'   => $shipmentId,
-    ':trk' => $tracking,
-    ':car' => ($carrier ?: 'manual')
+    ':t'=>$transferId, ':m'=>$mode, ':trk'=>$tracking, ':cid'=>$carrierId ?: null, ':cc'=>$carrierCode,
+    ':cname'=>$carrierName, ':notes'=>$notes, ':idem'=>$idemKey ?: null, ':hash'=>$bodyHash, ':u'=>$userId
   ]);
-  $parcelId = (int)$pdo->lastInsertId();
-
-  // 3) Log event
-  $log = $pdo->prepare("
-    INSERT INTO transfer_logs
-      (transfer_id, shipment_id, event_type, event_data, actor_user_id, severity, source_system, created_at)
-    VALUES
-      (:t, :s, 'NOTE', :data, NULL, 'info', 'CIS', NOW())
-  ");
-  $log->execute([
-    ':t'   => $transferId,
-    ':s'   => $shipmentId,
-    ':data'=> json_encode([
-        'manual_tracking'=>$tracking,
-        'carrier'=>$carrier,
-        'notes'=>$notes,
-        'v'=>'1'
-    ], JSON_UNESCAPED_SLASHES)
-  ]);
-
-  $pdo->commit();
-  ok(['shipment_id'=>$shipmentId, 'parcel_id'=>$parcelId]);
+  $id = (int)$pdo->lastInsertId();
+  send(env_ok([
+    'id'=>$id,
+    'transfer_id'=>$transferId,
+    'mode'=>$mode,
+    'tracking'=>$tracking,
+    'carrier_id'=>$carrierId,
+    'carrier_code'=>$carrierCode,
+    'carrier_name'=>$carrierName,
+    'notes'=>$notes,
+    'created_at'=>gmdate('c')
+  ]));
 } catch (Throwable $e) {
-  $pdo->rollBack();
-  fail('SAVE_MANUAL_FAILED', $e->getMessage(), 400);
+  send(env_err('SERVER_ERROR','Could not save tracking',['hint'=>$e->getMessage()]));
 }
+
+function format_row(array $r): array {
+  return [
+    'id'=>(int)$r['id'],
+    'transfer_id'=>(int)$r['transfer_id'],
+    'mode'=>$r['mode'],
+    'tracking'=>$r['tracking'],
+    'carrier_id'=>$r['carrier_id']!==null?(int)$r['carrier_id']:null,
+    'carrier_code'=>$r['carrier_code'],
+    'carrier_name'=>$r['carrier_name'],
+    'notes'=>$r['notes'],
+    'created_at'=>$r['created_at']
+  ];
+}
+// Helper: determine if current session owns pack lock via PackLockService or session structure
+function lock_owner(int $transferId): bool {
+  try {
+    // Preferred: use PackLockService if available (DB-level authoritative)
+    $svc = new PackLockService();
+    $lock = $svc->getLock($transferId);
+    if ($lock && (int)$lock['user_id'] === (int)($_SESSION['userID'] ?? 0)) {
+      return true;
+    }
+  } catch (Throwable $e) { /* fallback to session */ }
+  $sess = $_SESSION['pack_lock'] ?? null;
+  if (is_array($sess) && (int)($sess['transfer_id'] ?? 0) === $transferId) {
+    if (!isset($sess['exp']) || (int)$sess['exp'] >= time()) return true;
+  }
+  return false;
+}
+        'notes'=>$notes,

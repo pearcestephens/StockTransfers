@@ -1,26 +1,59 @@
 <?php
-decluse Modules\\Transfers\\Stock\\Shared\\Services\\PackSendRequest as PackSendRequestDto;
-use Modules\\Transfers\\Stock\\Shared\\Util\\Uuid;
-
-require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
-require_once __DIR__ . '/../_shared/Bootstrap.php';
-
-use function Modules\\Transfers\\Stock\\Shared\\pack_send_orchestrator;ict_types=1);
+declare(strict_types=1);
 /**
  * File: pack_send.php
  * Purpose: HTTP endpoint for pack/send orchestration
- * Author: GitHub Copilot
+ * Author: GitHub Copilot (sanitized)
  * Last Modified: 2025-09-29
  * Dependencies: app.php, _shared Bootstrap stack
  */
 
-use Modules\Transfers\Shared\Services\PackSendRequest as PackSendRequestDto;
-use Modules\Transfers\Shared\Util\Uuid;
-
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
 require_once __DIR__ . '/../_shared/Bootstrap.php';
+use PDO;
 
-use function Modules\Transfers\Shared\pack_send_orchestrator;
+use Modules\Transfers\Stock\Shared\Services\PackSendRequest as PackSendRequestDto;
+use Modules\Transfers\Stock\Shared\Util\Uuid;
+use function Modules\Transfers\Stock\Shared\pack_send_orchestrator;
+
+header('Content-Type: application/json; charset=utf-8');
+
+try {
+    if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        echo json_encode([
+            'ok' => false,
+            'request_id' => Uuid::v4(),
+            'data' => null,
+            'error' => [
+                'code' => 'METHOD_NOT_ALLOWED',
+                'message' => 'Use POST for pack/send requests.',
+                'details' => [],
+            ],
+            'warnings' => [],
+        ], JSON_UNESCAPED_SLASHES);
+        return;
+<?php
+declare(strict_types=1);
+/**
+ * File: pack_send.php
+ * Purpose: HTTP endpoint for pack/send orchestration
+ * 
+ * SECURITY: Requires valid transfer lock ownership
+ * Author: GitHub Copilot (sanitized)
+ * Last Modified: 2025-10-01
+ * Dependencies: app.php, _shared Bootstrap stack
+ */
+
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
+require_once __DIR__ . '/../_shared/Bootstrap.php';
+require_once __DIR__ . '/_lib/ServerLockGuard.php';
+use PDO;
+
+use Modules\Transfers\Stock\Shared\Services\PackSendRequest as PackSendRequestDto;
+use Modules\Transfers\Stock\Shared\Util\Uuid;
+use function Modules\Transfers\Stock\Shared\pack_send_orchestrator;
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -40,6 +73,8 @@ try {
         return;
     }
 
+    $guard = ServerLockGuard::getInstance();
+    
     $rawBody = file_get_contents('php://input') ?: '';
     $payload = [];
     if ($rawBody !== '') {
@@ -50,25 +85,56 @@ try {
         $payload = $decoded;
     }
 
-    $idempotencyKey = (string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? $_SERVER['HTTP_X_IDEMPOTENCY_KEY'] ?? '');
-    $idempotencyKey = trim($idempotencyKey);
+    // Extract transfer ID and validate lock EARLY
+    $transferId = $guard->extractTransferIdOrDie($payload);
+    $userId = $guard->validateAuthOrDie();
+    
+    // CRITICAL: Validate lock ownership before pack/send
+    $guard->validateLockOrDie($transferId, $userId, 'pack and send');
 
-    $requestId = (string)($_SERVER['HTTP_X_REQUEST_ID'] ?? '');
-    if (!Uuid::isValid($requestId)) {
-        $requestId = Uuid::v4();
-    }
+    $pdo = pdo();
+    $reqId = (string)($_SERVER['HTTP_X_REQUEST_ID'] ?? '');
+    if (!Uuid::isValid($reqId)) $reqId = Uuid::v4();
+    $idempotencyKey = trim((string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? $_SERVER['HTTP_X_IDEMPOTENCY_KEY'] ?? ''));
 
     if (session_status() !== PHP_SESSION_ACTIVE) {
         session_start();
     }
-    $userId = (int)($_SESSION['staff_id'] ?? $_SESSION['userID'] ?? 0);
 
-    $dto = PackSendRequestDto::fromHttp($requestId, $idempotencyKey, $userId, $payload, $rawBody);
+    // --- Idempotency (shared semantics with manual tracking)
+    $input = $payload; // alias for clarity
+    $idemKey  = $idempotencyKey ?: null;
+    $idemHash = hash('sha256', json_encode($input, JSON_UNESCAPED_SLASHES));
+    if ($idemKey) {
+        $stmt = $pdo->prepare("SELECT response_json, status_code, idem_hash FROM transfer_idempotency WHERE idem_key=? LIMIT 1");
+        $stmt->execute([$idemKey]);
+        if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            if (!hash_equals((string)$row['idem_hash'], $idemHash)) {
+                http_response_code(409);
+                echo json_encode(['ok'=>false,'request_id'=>$reqId,'error'=>['code'=>'IDEMPOTENCY_BODY_MISMATCH','message'=>'Same Idempotency-Key with different body']], JSON_UNESCAPED_SLASHES); exit;
+            }
+            $resp = json_decode($row['response_json'] ?? 'null', true) ?: [];
+            $resp['replay'] = true;
+            http_response_code((int)($row['status_code'] ?? 200));
+            echo json_encode($resp, JSON_UNESCAPED_SLASHES); exit;
+        }
+    }
+
+    $dto = PackSendRequestDto::fromHttp($reqId, $idempotencyKey, $userId, $payload, $rawBody);
 
     $orchestrator = pack_send_orchestrator();
     $response = $orchestrator->handle($dto);
 
-    echo json_encode($response, JSON_UNESCAPED_SLASHES);
+    // Persist idempotent response (best-effort)
+    $envelope = $response; // assume orchestrator returns unified envelope
+    echo json_encode($envelope, JSON_UNESCAPED_SLASHES);
+    if ($idemKey && ($envelope['ok'] ?? false)) {
+        try {
+            $ins = $pdo->prepare("INSERT INTO transfer_idempotency (idem_key, idem_hash, response_json, status_code, created_at) VALUES (?,?,?,?,NOW())");
+            $ins->execute([$idemKey, $idemHash, json_encode($envelope, JSON_UNESCAPED_SLASHES), 200]);
+        } catch (Throwable $e) { /* ignore persist failure */ }
+    }
+    return;
 } catch (Throwable $exception) {
     $fallback = [
         'ok' => false,

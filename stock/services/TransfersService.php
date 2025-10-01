@@ -116,7 +116,8 @@ final class TransfersService
                     vp.variant_name AS product_variant,
                     vp.sku          AS product_sku,
                     vp.handle       AS product_handle,
-                    vp.brand        AS product_brand
+                    vp.brand        AS product_brand,
+                    vp.image_url    AS image_url
                FROM transfer_items ti
           LEFT JOIN vend_products vp ON vp.id = ti.product_id
               WHERE ti.transfer_id = :tid

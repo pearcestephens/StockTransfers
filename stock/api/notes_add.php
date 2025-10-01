@@ -5,6 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/config.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/ApiResponder.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/JsonGuard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/HttpGuard.php';
+require_once __DIR__ . '/_lib/ServerLockGuard.php';
 
 use Modules\Transfers\Stock\Services\NotesService;
 use Modules\Transfers\Stock\Lib\AccessPolicy;
@@ -16,16 +17,21 @@ JsonGuard::csrfCheckOptional();
 JsonGuard::idempotencyGuard();
 HttpGuard::requireJsonContent();
 
-if (empty($_SESSION['userID'])) ApiResponder::json(['success'=>false,'error'=>'Not authenticated'], 401);
+$guard = ServerLockGuard::getInstance();
+$userId = $guard->validateAuthOrDie();
 
 $body = JsonGuard::readJson();
-$transferId = (int)($body['transfer_id'] ?? 0);
+$transferId = $guard->extractTransferIdOrDie($body);
 $text = (string)($body['note_text'] ?? '');
 
-if ($transferId <= 0 || trim($text) === '') {
-    ApiResponder::json(['success'=>false,'error'=>'transfer_id and note_text required'], 400);
+if (trim($text) === '') {
+    ApiResponder::json(['success'=>false,'error'=>'note_text required'], 400);
 }
-if (!AccessPolicy::canAccessTransfer((int)$_SESSION['userID'], $transferId)) {
+
+// CRITICAL: Validate lock ownership before adding notes
+$guard->validateLockOrDie($transferId, $userId, 'add note');
+
+if (!AccessPolicy::canAccessTransfer($userId, $transferId)) {
     ApiResponder::json(['success'=>false,'error'=>'Forbidden'], 403);
 }
 

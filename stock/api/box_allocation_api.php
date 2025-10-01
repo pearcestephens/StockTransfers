@@ -9,6 +9,7 @@
  * @created 2025-09-26
  */
 
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
 require_once 'box_allocation_engine.php';
 

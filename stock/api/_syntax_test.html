@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JS Syntax Validator</title>
+</head>
+<body>
+    <h1>🔍 JavaScript Syntax Validator</h1>
+    <div id="result"></div>
+    
+    <script>
+        try {
+            // Test if the pack-lock.js file can be loaded without errors
+            const script = document.createElement('script');
+            script.src = 'https://staff.vapeshed.co.nz/modules/transfers/stock/assets/js/pack-lock.js';
+            script.onload = function() {
+                document.getElementById('result').innerHTML = '<div style="color: green; font-size: 18px;">✅ JavaScript loaded successfully - no syntax errors!</div>';
+            };
+            script.onerror = function() {
+                document.getElementById('result').innerHTML = '<div style="color: red; font-size: 18px;">❌ JavaScript failed to load - syntax error detected!</div>';
+            };
+            document.head.appendChild(script);
+        } catch (error) {
+            document.getElementById('result').innerHTML = '<div style="color: red; font-size: 18px;">❌ Syntax Error: ' + error.message + '</div>';
+        }
+    </script>
+</body>
+</html>

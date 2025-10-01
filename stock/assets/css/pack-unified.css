@@ -1,0 +1,745 @@
+/**
+ * ============================================================================
+ * TRANSFERS PACK SYSTEM - UNIFIED CSS
+ * ============================================================================
+ * 
+ * Consolidated styling for the pack system - replaces multiple CSS files
+ * with clean, organized, maintainable styles.
+ * 
+ * Features:
+ * - Lock system styling
+ * - Toast notifications
+ * - Modal dialogs
+ * - Pack interface components
+ * - Responsive design
+ * 
+ * Version: 2.0.0 (Clean Architecture)
+ */
+
+/* ============================================================================
+ * CSS VARIABLES - CENTRALIZED THEME
+ * ============================================================================ */
+
+:root {
+  /* Store Transfer Branding Colors */
+  --pack-primary: #6f42c1;
+  --pack-primary-dark: #5a3296;
+  --pack-primary-light: #8a6bd1;
+  
+  /* Lock System Colors */
+  --lock-owned: #28a745;
+  --lock-requested: #ffc107;
+  --lock-denied: #dc3545;
+  --lock-available: #6c757d;
+  
+  /* Toast Colors */
+  --toast-success: #28a745;
+  --toast-error: #dc3545;
+  --toast-warning: #ffc107;
+  --toast-info: #17a2b8;
+  
+  /* Layout */
+  --header-height: 50px;
+  --border-radius: 6px;
+  --box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  --box-shadow-lg: 0 4px 12px rgba(0,0,0,0.15);
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s ease;
+  
+  /* Z-Index Stack */
+  --z-toast: 10000;
+  --z-modal: 10001;
+  --z-dropdown: 1000;
+}
+
+/* ============================================================================
+ * PRODUCT IMAGE STYLING
+ * ============================================================================ */
+
+.product-thumb {
+  width: 45px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 2px solid #dee2e6;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.product-thumb:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  border-color: #007bff;
+}
+
+/* ============================================================================
+ * TABLE ROW VALIDATION COLORS
+ * ============================================================================ */
+
+.pack-item-row.table-success {
+  background-color: rgba(40, 167, 69, 0.1) !important;
+  border-left: 3px solid #28a745;
+}
+
+.pack-item-row.table-danger {
+  background-color: rgba(220, 53, 69, 0.1) !important;
+  border-left: 3px solid #dc3545;
+}
+
+.pack-item-row.table-warning {
+  background-color: rgba(255, 193, 7, 0.1) !important;
+  border-left: 3px solid #ffc107;
+}
+
+/* Hover effects for validation rows */
+.pack-item-row.table-success:hover {
+  background-color: rgba(40, 167, 69, 0.15) !important;
+}
+
+.pack-item-row.table-danger:hover {
+  background-color: rgba(220, 53, 69, 0.15) !important;
+}
+
+.pack-item-row.table-warning:hover {
+  background-color: rgba(255, 193, 7, 0.15) !important;
+}
+
+/* ============================================================================
+ * AUTO-SAVE STATUS ENHANCEMENTS
+ * ============================================================================ */
+
+.autosave-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 15px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.autosave-pill .pill-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background-color: currentColor;
+}
+
+.autosave-pill.status-idle {
+  background-color: #6c757d;
+  color: white;
+}
+
+.autosave-pill.status-saving {
+  background-color: #ffc107;
+  color: #212529;
+}
+
+.autosave-pill.status-saving .pill-icon {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.autosave-pill.status-saved {
+  background-color: #28a745;
+  color: white;
+}
+
+.autosave-pill.status-error {
+  background-color: #dc3545;
+  color: white;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ============================================================================
+ * QUANTITY INPUT STYLING
+ * ============================================================================ */
+
+.qty-input {
+  text-align: center !important;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.qty-input:focus {
+  border-color: var(--pack-primary);
+  box-shadow: 0 0 0 0.2rem rgba(111, 66, 193, 0.25);
+}
+
+/* Validation states for inputs */
+.pack-item-row.table-success .qty-input {
+  border-color: #28a745;
+  color: #28a745;
+}
+
+.pack-item-row.table-danger .qty-input {
+  border-color: #dc3545;
+  color: #dc3545;
+}
+
+/* ============================================================================
+ * BUTTON ENHANCEMENTS
+ * ============================================================================ */
+
+#autofillBtn, #resetBtn {
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+#autofillBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+#resetBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+#lockDiagnosticBtn, #refreshPageBtn {
+  transition: all 0.2s ease;
+}
+
+#lockDiagnosticBtn:hover, #refreshPageBtn:hover {
+  background: rgba(255,255,255,0.3) !important;
+  transform: scale(1.05);
+}
+
+.store-transfer-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.store-transfer-header .fa {
+  margin-right: 0.5rem;
+  opacity: 0.9;
+}
+
+.store-transfer-meta {
+  background: var(--pack-primary-dark);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: var(--border-radius);
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.store-transfer-meta .row > div {
+  display: flex;
+  align-items: center;
+}
+
+.store-transfer-meta .fa {
+  margin-right: 0.5rem;
+  opacity: 0.8;
+  width: 16px;
+  text-align: center;
+}
+
+/* ============================================================================
+ * LOCK SYSTEM STYLING
+ * ============================================================================ */
+
+.lock-status-indicator {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  font-size: 0.875rem;
+  box-shadow: var(--box-shadow);
+  z-index: var(--z-dropdown);
+  transition: all var(--transition-normal);
+}
+
+.lock-status-indicator.owned {
+  background: var(--lock-owned);
+  color: white;
+}
+
+.lock-status-indicator.available {
+  background: var(--lock-available);
+  color: white;
+}
+
+.lock-status-indicator.locked {
+  background: var(--lock-denied);
+  color: white;
+}
+
+.lock-status-indicator.requesting {
+  background: var(--lock-requested);
+  color: #212529;
+}
+
+.lock-control-buttons {
+  margin-top: 0.5rem;
+}
+
+.lock-control-buttons .btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  margin-right: 0.25rem;
+}
+
+/* Lock Request Modal */
+.ownership-request-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow-lg);
+  z-index: var(--z-modal);
+  max-width: 400px;
+  width: 90%;
+}
+
+.ownership-request-modal .modal-header {
+  background: var(--pack-primary);
+  color: white;
+  padding: 1rem;
+  border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.ownership-request-modal .modal-body {
+  padding: 1.5rem;
+}
+
+.ownership-request-modal .modal-footer {
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.ownership-request-modal .btn-accept {
+  background: var(--lock-owned);
+  border-color: var(--lock-owned);
+  color: white;
+}
+
+.ownership-request-modal .btn-decline {
+  background: var(--lock-denied);
+  border-color: var(--lock-denied);
+  color: white;
+}
+
+/* ============================================================================
+ * TOAST NOTIFICATION SYSTEM
+ * ============================================================================ */
+
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: var(--z-toast);
+  max-width: 300px;
+}
+
+.toast {
+  background: white;
+  border-left: 4px solid var(--toast-info);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow-lg);
+  margin-bottom: 0.5rem;
+  animation: toastSlideIn var(--transition-normal);
+  overflow: hidden;
+}
+
+.toast.toast-success {
+  border-left-color: var(--toast-success);
+}
+
+.toast.toast-error {
+  border-left-color: var(--toast-error);
+}
+
+.toast.toast-warning {
+  border-left-color: var(--toast-warning);
+}
+
+.toast.toast-info {
+  border-left-color: var(--toast-info);
+}
+
+.toast-content {
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.toast-content .fa {
+  margin-right: 0.5rem;
+  width: 16px;
+  text-align: center;
+}
+
+.toast.toast-success .fa {
+  color: var(--toast-success);
+}
+
+.toast.toast-error .fa {
+  color: var(--toast-error);
+}
+
+.toast.toast-warning .fa {
+  color: var(--toast-warning);
+}
+
+.toast.toast-info .fa {
+  color: var(--toast-info);
+}
+
+.toast-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 0.875rem;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+}
+
+.toast-close:hover {
+  background: #f8f9fa;
+  color: #495057;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ============================================================================
+ * DIAGNOSTIC TOOLS
+ * ============================================================================ */
+
+.diagnostic-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--pack-primary);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  box-shadow: var(--box-shadow-lg);
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all var(--transition-normal);
+  z-index: var(--z-dropdown);
+}
+
+.diagnostic-button:hover {
+  background: var(--pack-primary-dark);
+  transform: scale(1.1);
+}
+
+.diagnostic-modal pre {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: var(--border-radius);
+  padding: 1rem;
+  font-size: 0.875rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+ * PACK INTERFACE COMPONENTS
+ * ============================================================================ */
+
+.pack-section {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.pack-section-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 1rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+.pack-section-body {
+  padding: 1.5rem;
+}
+
+.pack-form-group {
+  margin-bottom: 1rem;
+}
+
+.pack-form-group label {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: #495057;
+}
+
+.pack-form-control {
+  border-radius: var(--border-radius);
+  border: 1px solid #ced4da;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.pack-form-control:focus {
+  border-color: var(--pack-primary);
+  box-shadow: 0 0 0 0.2rem rgba(111, 66, 193, 0.25);
+}
+
+.pack-btn {
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.pack-btn-primary {
+  background: var(--pack-primary);
+  border-color: var(--pack-primary);
+  color: white;
+}
+
+.pack-btn-primary:hover {
+  background: var(--pack-primary-dark);
+  border-color: var(--pack-primary-dark);
+}
+
+/* ============================================================================
+ * RESPONSIVE DESIGN
+ * ============================================================================ */
+
+@media (max-width: 768px) {
+  .toast-container {
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+  
+  .lock-status-indicator {
+    right: 10px;
+    font-size: 0.75rem;
+    padding: 0.375rem 0.75rem;
+  }
+  
+  .ownership-request-modal {
+    margin: 10px;
+    width: calc(100% - 20px);
+  }
+  
+  .diagnostic-button {
+    bottom: 10px;
+    right: 10px;
+    width: 45px;
+    height: 45px;
+    font-size: 1rem;
+  }
+  
+  .store-transfer-header {
+    padding: 0.75rem;
+  }
+  
+  .store-transfer-header h1 {
+    font-size: 1.25rem;
+  }
+  
+  .store-transfer-meta {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* ============================================================================
+ * ACCESSIBILITY
+ * ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus indicators for keyboard navigation */
+.pack-btn:focus,
+.pack-form-control:focus,
+.toast-close:focus {
+  outline: 2px solid var(--pack-primary);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+ * AUTO-SAVE STATUS INDICATORS
+ * ============================================================================ */
+
+.auto-save-status {
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+.auto-save-status[data-status="idle"] {
+  color: #6c757d;
+}
+
+.auto-save-status[data-status="saving"] {
+  color: #ffc107;
+  animation: autosave-pulse 1s infinite;
+}
+
+.auto-save-status[data-status="saved"] {
+  color: #28a745;
+}
+
+.auto-save-status[data-status="error"] {
+  color: #dc3545;
+}
+
+@keyframes autosave-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.auto-save-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ============================================================================
+ * AUTO-SAVE STATUS INDICATORS
+ * ============================================================================ */
+
+.auto-save-status {
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+.auto-save-status[data-status="idle"] {
+  color: rgba(255,255,255,0.8);
+}
+
+.auto-save-status[data-status="saving"] {
+  color: #ffc107;
+  animation: autosave-pulse 1s infinite;
+}
+
+.auto-save-status[data-status="saved"] {
+  color: #28a745;
+}
+
+.auto-save-status[data-status="error"] {
+  color: #dc3545;
+}
+
+@keyframes autosave-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Toast animations */
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* ============================================================================
+ * UTILITY CLASSES
+ * ============================================================================ */
+
+.pack-text-center { text-align: center; }
+.pack-text-right { text-align: right; }
+.pack-text-left { text-align: left; }
+
+.pack-mt-1 { margin-top: 0.25rem; }
+.pack-mt-2 { margin-top: 0.5rem; }
+.pack-mt-3 { margin-top: 1rem; }
+
+.pack-mb-1 { margin-bottom: 0.25rem; }
+.pack-mb-2 { margin-bottom: 0.5rem; }
+.pack-mb-3 { margin-bottom: 1rem; }
+
+.pack-p-1 { padding: 0.25rem; }
+.pack-p-2 { padding: 0.5rem; }
+.pack-p-3 { padding: 1rem; }
+
+.pack-border { border: 1px solid #dee2e6; }
+.pack-border-radius { border-radius: var(--border-radius); }
+.pack-shadow { box-shadow: var(--box-shadow); }
+.pack-shadow-lg { box-shadow: var(--box-shadow-lg); }
+
+/* ============================================================================
+ * PRINT STYLES
+ * ============================================================================ */
+
+@media print {
+  .lock-status-indicator,
+  .toast-container,
+  .diagnostic-button,
+  .ownership-request-modal {
+    display: none !important;
+  }
+  
+  .store-transfer-header {
+    background: white !important;
+    color: black !important;
+    border: 2px solid black;
+  }
+}

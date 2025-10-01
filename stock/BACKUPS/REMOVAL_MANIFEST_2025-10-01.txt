@@ -1,0 +1,19 @@
+Files marked for removal (test/debug cleanup):
+_test_pack_system.php
+api/_test_suite.html
+api/_test_auto_grant_live.php
+api/_test_api.php
+api/_test_ownership_request.php
+api/_test_auto_grant.php
+debug_lock_status.php
+debug_lock_system.php
+api/debug_requests.php
+api/_diag_headers.php
+api/_diag.php
+simple_db_test.php
+tools/lock_smoke_test.php
+test_lock_acquire.php
+test_lock_enforcement.php
+api/lock_debug_test.php
+api/_table_test.php
+test-unified-view.php

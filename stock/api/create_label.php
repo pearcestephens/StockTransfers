@@ -30,6 +30,7 @@ declare(strict_types=1);
  * { "ok": true, "carrier":"nzpost"|"nzc", "consignment_id":"...","label_url":null|"...","spooled":true }
  */
 
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require __DIR__.'/_lib/validate.php';         // cors_and_headers(), json_input(), ok(), fail(), pdo(), etc.
 require __DIR__.'/_lib/adapters/nzpost.php';  // nz_post_create(...)
 require __DIR__.'/_lib/adapters/gss.php';     // nzc_create(...)
@@ -84,11 +85,11 @@ foreach ($pkgs as $p) {
   ];
 }
 
-// idempotency
+// --- Idempotency (single-table, MV P)
 $idem = (string)($in['idem'] ?? '');
-if ($idem==='') {
-  $idem = hash('sha256', json_encode([$transferId,$carrier,$serviceCode,$parcels], JSON_UNESCAPED_SLASHES));
-}
+$idemPayload = [$transferId,$carrier,$serviceCode,$parcels,$options,$facts];
+$idemHash = hash('sha256', json_encode($idemPayload, JSON_UNESCAPED_SLASHES));
+if ($idem==='') { $idem = 'lbl-' . substr($idemHash,0,24); }
 
 // -------- Header creds (your requirement: client headers are accepted) --------
 // Build a lower-cased header map so adapters can read both dash/underscore
@@ -146,19 +147,58 @@ $selForAdapter = [
   'package_code' => $packageCode,
 ];
 
-// -------- Dispatch to live adapter --------
+// -------- Idempotent replay check --------
+$pdo = $pdo ?? pdo();
+try {
+  $selStmt = $pdo->prepare('SELECT id, carrier_code, service_code, tracking, label_url, idem_hash, spooled
+                              FROM transfer_labels WHERE idem_key = ? LIMIT 1');
+  $selStmt->execute([$idem]);
+  if ($row = $selStmt->fetch(PDO::FETCH_ASSOC)) {
+    if (!hash_equals((string)$row['idem_hash'], $idemHash)) {
+      fail('IDEMPOTENCY_BODY_MISMATCH','Existing idem_key has different payload hash',409);
+    }
+    $reqId = $idem; // stable request id for replay scenario
+    $carrierCode = strtoupper((string)$row['carrier_code']);
+    $data = [
+      'label_id'      => (int)$row['id'],
+      'transfer_id'   => $transferId,
+      'carrier_code'  => $carrierCode,
+      'carrier'       => strtolower($carrierCode),
+      'service_code'  => (string)$row['service_code'],
+      'total_inc'     => (float)($sel['total'] ?? 0),
+      'tracking'      => $row['tracking'],
+      'label_url'     => $row['label_url'],
+      'print_url'     => $row['label_url'],
+      'spooled'       => (bool)$row['spooled'],
+    ];
+    $out = ['ok'=>true,'request_id'=>$reqId,'data'=>$data,'replay'=>true];
+    echo json_encode($out, JSON_UNESCAPED_SLASHES); exit;
+  }
+} catch (Throwable $e) { /* proceed to creation */ }
+
+// -------- Dispatch to live adapter (fresh create) --------
 try {
   if ($carrier === 'nzpost') {
     $resp = nz_post_create($ctx, $selForAdapter, $parcels, $options, $headersLower, $idem);
-    $consignmentId = (string)($resp['shipment_id'] ?? $resp['consignment_id'] ?? '');
-    $labelUrl      = (string)($resp['print']['appendix_slip_url'] ?? $resp['label_url'] ?? '');
   } else { // 'nzc'
     $resp = nzc_create($ctx, $selForAdapter, $parcels, $options, $headersLower, $idem);
-    $consignmentId = (string)($resp['shipment_id'] ?? $resp['consignment_id'] ?? '');
-    $labelUrl      = (string)($resp['print']['appendix_slip_url'] ?? $resp['label_url'] ?? '');
   }
+} catch (Throwable $e) { fail('CARRIER_CREATE_FAILED', $e->getMessage(), 400); }
+
+$consignmentId = (string)($resp['shipment_id'] ?? $resp['consignment_id'] ?? '');
+$labelUrl      = (string)($resp['print']['appendix_slip_url'] ?? $resp['label_url'] ?? '');
+$tracking      = (string)($resp['tracking'] ?? $resp['tracking_number'] ?? $consignmentId);
+if ($tracking==='') $tracking = 'UNKNOWN';
+
+// Persist label
+try {
+  $ins = $pdo->prepare('INSERT INTO transfer_labels
+      (transfer_id, carrier_code, service_code, total_inc, tracking, label_url, spooled, idem_key, idem_hash)
+    VALUES (?,?,?,?,?,?,?,?,?)');
+  $totalInc = (float)($sel['total'] ?? 0);
+  $ins->execute([$transferId, strtoupper($carrier), $serviceCode, $totalInc, $tracking, $labelUrl, 1, $idem, $idemHash]);
 } catch (Throwable $e) {
-  fail('CARRIER_CREATE_FAILED', $e->getMessage(), 400);
+  // If unique dup on idem → replay race; if unique dup on tracking → ignore (already saved)
 }
 
 // -------- Optional: mark packed in transfers (compact, safe) --------
@@ -167,12 +207,23 @@ if (!empty($in['mark_packed'])) {
 }
 
 // -------- Respond --------
-ok([
-  'carrier'        => $carrier,
-  'consignment_id' => $consignmentId ?: null,
-  'label_url'      => $labelUrl ?: null,   // agent usually prints automatically
-  'spooled'        => true
-]);
+$carrierCode = strtoupper($carrier);
+$spooled = true;
+$labelId = isset($ins) ? (int)($pdo->lastInsertId() ?: 0) : 0;
+$reqId = $idem; // deterministic ID for initial response
+$data = [
+  'label_id'      => $labelId,
+  'transfer_id'   => $transferId,
+  'carrier_code'  => $carrierCode,
+  'carrier'       => strtolower($carrierCode),
+  'service_code'  => $serviceCode,
+  'total_inc'     => (float)($sel['total'] ?? 0),
+  'tracking'      => $tracking,
+  'label_url'     => $labelUrl ?: null,
+  'print_url'     => $labelUrl ?: null,
+  'spooled'       => $spooled
+];
+echo json_encode(['ok'=>true,'request_id'=>$reqId,'data'=>$data], JSON_UNESCAPED_SLASHES); exit;
 
 /* ================= Helpers ================= */
 

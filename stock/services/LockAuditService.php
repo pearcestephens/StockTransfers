@@ -3,12 +3,48 @@ declare(strict_types=1);
 
 namespace Modules\Transfers\Stock\Services;
 
-use PDO; use Throwable; use Core\DB;
+use PDO;
+use Throwable;
 
 final class LockAuditService
 {
-    private PDO $db; private TransferLogger $logger;
-    public function __construct(){ $this->db = DB::instance(); $this->logger = new TransferLogger(); }
+    private PDO $db; 
+    private TransferLogger $logger;
+    
+    public function __construct()
+    { 
+        $this->db = cis_pdo(); 
+        $this->logger = new TransferLogger();
+        $this->createTablesIfNotExists();
+    }
+    
+    private function createTablesIfNotExists(): void
+    {
+        try {
+            // Create general audit log table
+            $this->db->exec("
+                CREATE TABLE IF NOT EXISTS transfer_audit_log (
+                  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                  entity_type   VARCHAR(50) NOT NULL DEFAULT 'transfer',
+                  entity_pk     INT UNSIGNED NOT NULL,
+                  transfer_pk   INT UNSIGNED NOT NULL,
+                  action        VARCHAR(100) NOT NULL,
+                  status        VARCHAR(50) NOT NULL DEFAULT 'success',
+                  actor_type    VARCHAR(20) NOT NULL DEFAULT 'user',
+                  actor_id      INT UNSIGNED NULL,
+                  metadata      JSON NULL,
+                  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  INDEX (transfer_pk, action),
+                  INDEX (actor_id, created_at),
+                  INDEX (created_at),
+                  INDEX (entity_type, entity_pk)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (\Throwable $e) {
+            // Log but don't fail - tables may already exist
+            error_log('LockAuditService table creation warning: ' . $e->getMessage());
+        }
+    }
 
     public function audit(int $transferId, string $action, string $status, array $extra=[]): void
     {

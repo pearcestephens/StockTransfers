@@ -1,43 +1,9 @@
 <?php
-declare(strict_types=1);
-
-header('Content-Type:application/json;charset=utf-8');
-
-require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/config.php';
-require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/shipping/OutletRepo.php';
-require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/shipping/StarshipitClient.php';
-require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/shipping/GSSClient.php';
-require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/stock/services/FreightCalculator.php';
-require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/stock/lib/AccessPolicy.php';
-
-use CIS\Shipping\StarshipitClient;
-use CIS\Shipping\GSSClient;
-use Modules\Transfers\Stock\Services\FreightCalculator;
-
-function jout(array $payload,int $code=200): never {
-  http_response_code($code);
-  echo json_encode($payload, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-  exit;
-}
-function jerr(string $msg,array $extra=[],int $code=400): never {
-  jout(['ok'=>false,'error'=>$msg]+$extra,$code);
-}
-
-$tid=(int)($_GET['transfer']??$_GET['t']??0);
-if($tid<=0) jerr('transfer is required');
-
-$carriersWanted=array_values(array_filter(array_map('trim',explode(',',strtolower((string)($_GET['carriers']??'nz_post,gss'))))));
-if(!$carriersWanted) $carriersWanted=['nz_post','gss'];
-
-$wantAssets=((int)($_GET['assets']??1)===1);
-$deep=((int)($_GET['deep']??1)===1);
-
-$env=[
-  'php_version'=>PHP_VERSION,
-  'time'=>date('c'),
-  'timezone'=>(string)(date_default_timezone_get()?:'UTC'),
-  'app_env'=>(string)($_ENV['APP_ENV']??getenv('APP_ENV')??'dev'),
-];
+// Neutralized diagnostic endpoint (removed sensitive environment introspection) 2025-10-01
+http_response_code(410);
+header('Content-Type: application/json');
+echo json_encode(['ok'=>false,'error'=>'_diag deprecated']);
+exit;
 
 $advice=[];
 $sections=[];

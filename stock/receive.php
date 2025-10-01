@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 
 spl_autoload_register(static function(string $class): void {
   $prefix = 'Modules\\';

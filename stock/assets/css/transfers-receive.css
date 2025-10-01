@@ -1,6 +1,179 @@
-/* ==========================================================================
-   Transfers — RECEIVE view tweaks
-   ========================================================================== */
-
 #receive-table td, #receive-table th { vertical-align: middle; }
 #receive-table .rem { font-weight: 600; }
+
+/* 🔥 KICK-ASS RECEIVE INTERFACE ENHANCEMENTS 🔥 */
+
+/* Smooth scan animation for received items */
+.receive-scan-success {
+  animation: scanPulse 0.6s ease-out;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: white !important;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+@keyframes scanPulse {
+  0% { 
+    transform: scale(1) translateY(0);
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  50% { 
+    transform: scale(1.05) translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.6);
+  }
+  100% { 
+    transform: scale(1.02) translateY(0);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  }
+}
+
+/* Quick flash for quantity updates */
+.qty-flash {
+  animation: quantityFlash 0.4s ease-in-out;
+}
+
+@keyframes quantityFlash {
+  0%, 100% { background: transparent; }
+  50% { background: linear-gradient(90deg, #3b82f6, #1d4ed8); color: white; border-radius: 4px; }
+}
+
+/* Slick progress bar for receive completion */
+.receive-progress {
+  height: 4px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #e5e7eb 100%);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.receive-progress::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  width: var(--progress, 0%);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 2px;
+}
+
+/* Variance indicators that match pack metrics */
+.variance-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.variance-perfect {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.variance-over {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.variance-under {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+/* Smooth hover effects for receive table rows */
+#receive-table tbody tr {
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+#receive-table tbody tr:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-left-color: #3b82f6;
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Quantity input enhancements */
+.receive-qty-input {
+  text-align: center;
+  font-weight: 600;
+  border: 2px solid #e5e7eb;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.receive-qty-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  transform: scale(1.05);
+}
+
+.receive-qty-input.qty-complete {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+}
+
+/* Slick completion checkmarks */
+.receive-check {
+  color: #10b981;
+  animation: checkBounce 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes checkBounce {
+  0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+  50% { transform: scale(1.2) rotate(-90deg); opacity: 0.8; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* Status badges that match the pack design */
+.receive-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.receive-status-pending {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+.receive-status-complete {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.receive-status-partial {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+}
+
+/* Subtle scan line animation for active receiving */
+.receiving-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, #3b82f6 50%, transparent 100%);
+  animation: scanLine 2s infinite ease-in-out;
+}
+
+@keyframes scanLine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}

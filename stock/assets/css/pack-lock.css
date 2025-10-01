@@ -1,0 +1,182 @@
+/**
+ * Transfer Pack Lock System Styles
+ * Professional lock interface styling
+ */
+
+/* Lock status badge */
+#lockStatusBadge {
+  font-size: 0.7em;
+  background: rgba(255,255,255,0.25);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.4);
+  text-shadow: none;
+}
+
+/* Lock diagnostic button */
+#lockDiagnosticBtn {
+  font-size: 0.6em;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  padding: 2px 6px;
+}
+
+/* Read-only sticky bar */
+#readOnlyStickyBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, #F39C12 0%, #F1C40F 100%);
+  border-top: 2px solid #E67E22;
+  box-shadow: 0 -2px 10px rgba(243, 156, 18, 0.3);
+  padding: 15px 20px;
+  text-align: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui;
+}
+
+#readOnlyStickyBar .content-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#readOnlyStickyBar .lock-info {
+  flex: 1;
+  text-align: left;
+  min-width: 280px;
+}
+
+#readOnlyStickyBar .lock-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #8B4513;
+  margin-bottom: 3px;
+}
+
+#readOnlyStickyBar .lock-subtitle {
+  font-size: 13px;
+  color: #A0522D;
+  line-height: 1.3;
+}
+
+#readOnlyStickyBar .action-area {
+  text-align: center;
+  min-width: 180px;
+}
+
+/* Request ownership button */
+#requestOwnershipBtn {
+  background: #E67E22;
+  border: 1px solid #D35400;
+  color: white;
+  font-weight: bold;
+  padding: 10px 24px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(211, 84, 0, 0.3);
+  transition: all 0.2s ease;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+#requestOwnershipBtn:hover {
+  background: #D35400;
+}
+
+/* Request status area */
+#requestStatus {
+  margin-top: 12px;
+  display: none;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#countdownTimer {
+  background: rgba(255,255,255,0.9);
+  border: 2px solid #E67E22;
+  border-radius: 6px;
+  padding: 15px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: bold;
+  color: #8B4513;
+  display: none;
+}
+
+#countdownTimer .countdown-message {
+  margin-bottom: 8px;
+}
+
+#countdownTimer .countdown-number {
+  font-size: 24px;
+  color: #E67E22;
+  font-family: monospace;
+}
+
+#countdownTimer .countdown-subtitle {
+  font-size: 14px;
+  margin-top: 8px;
+  color: #A0522D;
+}
+
+/* Lock overlay for testing/debugging */
+#lockTestOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 0, 0, 0.8);
+  z-index: 10000;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* Read-only mode styles */
+.read-only-disabled {
+  opacity: 0.5 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+.read-only-blurred {
+  filter: blur(3px) !important;
+  opacity: 0.4 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  #readOnlyStickyBar .content-wrapper {
+    flex-direction: column !important;
+    text-align: center !important;
+    gap: 15px !important;
+  }
+  
+  #readOnlyStickyBar .lock-info {
+    text-align: center !important;
+    min-width: auto !important;
+  }
+  
+  #requestOwnershipBtn {
+    font-size: 14px;
+    padding: 8px 20px;
+  }
+}
+
+/* Body padding adjustment when sticky bar is active */
+body.lock-sticky-active {
+  padding-bottom: 90px;
+}
