@@ -14,17 +14,18 @@
   function define(Base) {
     class PackLockSystem extends Base {
       constructor(transferId, userId, opts = {}) {
-        // ===== Legacy endpoints (relative) =====
+        // ===== Modern endpoints (service-based) =====
         const api = {
-          status    : '/modules/transfers/stock/api/lock_status.php',
-          acquire   : '/modules/transfers/stock/api/lock_acquire.php',
-          release   : '/modules/transfers/stock/api/lock_release.php',
-          heartbeat : '/modules/transfers/stock/api/lock_heartbeat.php',
-          request   : '/modules/transfers/stock/api/lock_request.php',
-          respond   : '/modules/transfers/stock/api/lock_request_respond.php',
-          pending   : '/modules/transfers/stock/api/lock_requests_pending.php',
-          autogrant : '/modules/transfers/stock/api/auto_grant_service.php',
-          staff     : '/modules/transfers/stock/api/get_staff_users.php'
+          status    : '/modules/transfers/stock/api/lock_status_mod.php',
+          acquire   : '/modules/transfers/stock/api/lock_acquire_mod.php',
+          release   : '/modules/transfers/stock/api/lock_release_mod.php',
+          heartbeat : '/modules/transfers/stock/api/lock_heartbeat_mod.php',
+          request_start : '/modules/transfers/stock/api/lock_request_start.php',
+          request_decide: '/modules/transfers/stock/api/lock_request_decide.php',
+          request_poll  : '/modules/transfers/stock/api/lock_request_poll.php',
+          request_events: '/modules/transfers/stock/api/lock_request_events.php',
+          staff     : '/modules/transfers/stock/api/get_staff_users.php',
+          force_release: '/modules/transfers/stock/api/lock_force_release.php'
         };
 
         super({
@@ -182,23 +183,60 @@
         if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
       }
 
-      // 5) REQUEST OWNERSHIP (adapter)
+      // 5) REQUEST OWNERSHIP (modern start)
       async requestOwnership(message = 'Requesting access') {
         try {
-          const body = new URLSearchParams({
-            transfer_id: String(this.resourceId),
-            message
-          });
-          const res = await fetch(this.api.request, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
-            body
-          });
-          return await res.json();
-        } catch {
-          return { success:false, error:'Network error' };
+          const body = new URLSearchParams({ transfer_id: String(this.resourceId), message });
+          const res = await fetch(this.api.request_start, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest' }, body });
+          const json = await res.json();
+          if(json.success){ this.ensureRequestEvents(); }
+          return json;
+        } catch { return { success:false, error:'Network error' }; }
+      }
+
+      ensureRequestEvents(){
+        if(this._requestEventSource) return;
+        try {
+          const url = `${this.api.request_events}?transfer_id=${encodeURIComponent(this.resourceId)}`;
+          const es = new EventSource(url);
+          this._requestEventSource = es;
+          es.addEventListener('lock', (ev)=>{ try { this.handleLockRequestEvent(JSON.parse(ev.data)); } catch(e){ console.warn('SSE parse fail', e); } });
+          es.onerror = () => { /* browser will attempt reconnect */ };
+        } catch(e){ console.warn('SSE open failed', e); }
+      }
+
+      async handleLockRequestEvent(payload){
+        if(!payload || !payload.state) return;
+        const st = payload.state;
+        if((st==='accepted' || payload.state_alias==='granted') && payload.requesting_user_id === this.userId){
+          const r = await this.acquireLock();
+          if(r?.success) this.checkLockStatus();
+          return;
         }
+        if(st==='pending' && payload.action_required){ this.showPendingDecision(payload); }
+      }
+
+      showPendingDecision(payload){
+        if(this._pendingDecisionBanner) return;
+        const bar = document.createElement('div');
+        bar.className='lock-decision-banner';
+        bar.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#222;color:#fff;padding:8px 12px;font-size:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 -2px 6px rgba(0,0,0,.3)';
+        bar.innerHTML=`<span>Lock request from <strong>${payload.requesting_user_name||('User '+payload.requesting_user_id)}</strong></span><span><button id="lockDecideAccept" class="btn btn-sm btn-success mr-2">Give Lock</button><button id="lockDecideDecline" class="btn btn-sm btn-danger">Decline</button></span>`;
+        document.body.appendChild(bar);
+        bar.querySelector('#lockDecideAccept').onclick=()=>this.decideRequest(payload.request_id,true);
+        bar.querySelector('#lockDecideDecline').onclick=()=>this.decideRequest(payload.request_id,false);
+        this._pendingDecisionBanner = bar;
+      }
+
+      async decideRequest(requestId, accept){
+        try {
+          const body = new URLSearchParams({ transfer_id:String(this.resourceId), decision: accept?'grant':'decline' });
+          const res = await fetch(this.api.request_decide, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest' }, body });
+          const json = await res.json();
+          if(this._pendingDecisionBanner){ this._pendingDecisionBanner.remove(); this._pendingDecisionBanner = null; }
+          if(json.success && json.state==='accepted'){ this.checkLockStatus(); }
+          return json;
+        } catch(e){ console.warn('Decision error', e); }
       }
 
       // 6) PENDING REQUESTS
@@ -262,8 +300,9 @@
       init() {
         const boot = () => {
           this.loadStaffUsers();
-          if (typeof this.startPolling === 'function') this.startPolling(); // base loop
+          if (typeof this.startPolling === 'function') this.startPolling(); // base loop (still used for status fallback)
           this.checkForActiveRequest();
+          this.ensureRequestEvents();
           document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
               if (typeof this.stopPolling === 'function') this.stopPolling();
@@ -325,7 +364,7 @@
         this.lockStatus = { ...(this.lockStatus || {}), ...status };
         const lockBadge = document.getElementById('lockStatusBadge');
 
-        if (status.has_lock) {
+  if (status.has_lock || status.hasLock) {
           if (lockBadge) {
             lockBadge.textContent = 'LOCKED BY YOU';
             lockBadge.style.background = 'rgba(40, 167, 69, 0.9)';
@@ -333,7 +372,7 @@
           }
           this.startHeartbeat();
           this.enableControls(true);
-        } else if (status.is_locked_by_other) {
+  } else if (status.is_locked_by_other || status.isLockedByOther) {
           if (lockBadge) {
             lockBadge.textContent = `LOCKED BY ${status.holder_name || 'OTHER USER'}`;
             lockBadge.style.background = 'rgba(220, 53, 69, 0.9)';

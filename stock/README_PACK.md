@@ -57,7 +57,7 @@ Behavior:
 `_shared/asset_version.php` exposes `transfer_asset_version()` returning a base version (manual bump) plus dev auto‑suffix when `APP_ENV=dev` or `?devassets=1`.
 
 ## Draft Data
-Column: `transfers.draft_data` JSON, updated by `draft_save.php` with structure:
+Column: `transfers.draft_data` JSON, updated by `draft_save_api.php` with structure:
 ```
 {
   counted_qty: { productId:int },
@@ -73,7 +73,7 @@ Column: `transfers.draft_data` JSON, updated by `draft_save.php` with structure:
 ## APIs (Selected)
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/stock/api/draft_save.php` | POST JSON | Save draft data |
+| `/stock/api/draft_save_api.php` | POST JSON | Save draft data (lock validated) |
 | `/stock/api/list_transfers.php` | GET | Paginated draft transfers for outlet |
 | `/stock/api/search_products.php` | GET | Product search (optionally outlet stock) |
 | `/stock/api/add_products_to_transfers.php` | POST JSON (idempotent) | Bulk add products |

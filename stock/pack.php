@@ -250,6 +250,87 @@ $toLbl   = $toLbl   ?? (string)_first($transfer['outlet_to_name']   ?? null, $to
 $fromDisplay = format_outlet_address(is_array($fromOutlet) ? $fromOutlet : null, $fromLbl);
 $toDisplay   = format_outlet_address(is_array($toOutlet)   ? $toOutlet   : null, $toLbl);
 
+// ---------------------------------------------------------------------------
+// Weight & classification enrichment (product -> category -> default)
+// ---------------------------------------------------------------------------
+try {
+  if ($items) {
+    // Collect product ids needing enrichment (no product-level grams and no category-level grams present)
+    $enrichIds = [];
+    foreach ($items as $it) {
+      $pid = (string)_first($it['product_id'] ?? null, $it['vend_product_id'] ?? null, '');
+      if ($pid === '') continue;
+      $hasProductWeight = isset($it['avg_weight_grams']) || isset($it['product_weight_grams']) || isset($it['weight_g']) || isset($it['unit_weight_g']);
+      $hasCategoryWeight = isset($it['category_avg_weight_grams']) || isset($it['category_weight_grams']) || isset($it['cat_weight_g']);
+      if (!$hasCategoryWeight) $enrichIds[$pid] = true; // always allow fill of category meta
+      if (!$hasProductWeight || !$hasCategoryWeight) $enrichIds[$pid] = true;
+    }
+    if ($enrichIds) {
+      $pdo = null;
+      if (class_exists('\\Core\\DB') && method_exists('\\Core\\DB','instance')) { $pdo = \Core\DB::instance(); }
+      elseif (function_exists('cis_pdo')) { $pdo = cis_pdo(); }
+      elseif (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) { $pdo = $GLOBALS['pdo']; }
+      if ($pdo instanceof PDO) {
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $chunks = array_chunk(array_keys($enrichIds), 200);
+        $classMap = [];
+        foreach ($chunks as $chunk) {
+          $ph = implode(',', array_fill(0, count($chunk), '?'));
+          $sql = "SELECT pcu.product_id, pcu.category_code, cw.avg_weight_grams AS category_avg_weight_grams\n                  FROM product_classification_unified pcu\n                  LEFT JOIN category_weights cw ON cw.category_code = pcu.category_code\n                  WHERE pcu.product_id IN ($ph)";
+          $st = $pdo->prepare($sql);
+          $st->execute($chunk);
+          foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $classMap[(string)$r['product_id']] = [
+              'category_code' => $r['category_code'] ?? null,
+              'category_avg_weight_grams' => isset($r['category_avg_weight_grams']) ? (int)$r['category_avg_weight_grams'] : null,
+            ];
+          }
+        }
+        if ($classMap) {
+          foreach ($items as &$itRef) {
+            $pid = (string)_first($itRef['product_id'] ?? null, $itRef['vend_product_id'] ?? null, '');
+            if ($pid === '' || !isset($classMap[$pid])) continue;
+            if (!isset($itRef['category_code']) && $classMap[$pid]['category_code']) {
+              $itRef['category_code'] = $classMap[$pid]['category_code'];
+            }
+            if (!isset($itRef['category_avg_weight_grams']) && $classMap[$pid]['category_avg_weight_grams']) {
+              $itRef['category_avg_weight_grams'] = $classMap[$pid]['category_avg_weight_grams'];
+            }
+            // Derive unified unit weight and source now for consistency across layers
+            $unitG = (int)_first(
+              $itRef['avg_weight_grams'] ?? null,
+              $itRef['product_weight_grams'] ?? null,
+              $itRef['weight_g'] ?? null,
+              $itRef['unit_weight_g'] ?? null,
+              $itRef['category_avg_weight_grams'] ?? null,
+              $itRef['category_weight_grams'] ?? null,
+              $itRef['cat_weight_g'] ?? null,
+              null
+            );
+            $weightSource = null;
+            if ($unitG !== null) {
+              if (isset($itRef['avg_weight_grams']) || isset($itRef['product_weight_grams']) || isset($itRef['weight_g']) || isset($itRef['unit_weight_g'])) {
+                $weightSource = 'product';
+              } elseif (isset($itRef['category_avg_weight_grams']) || isset($itRef['category_weight_grams']) || isset($itRef['cat_weight_g'])) {
+                $weightSource = 'category';
+              }
+            }
+            if ($unitG === null || $unitG < 1) {
+              $unitG = 100; // default grams
+              if ($weightSource === null) $weightSource = 'default';
+            }
+            $itRef['derived_unit_weight_grams'] = $unitG;
+            $itRef['weight_source'] = $weightSource;
+          }
+          unset($itRef);
+        }
+      }
+    }
+  }
+} catch (Throwable $e) {
+  error_log('Pack: weight enrichment warning: ' . $e->getMessage());
+}
+
 // Stock map (source outlet on-hand by product id) – pass-through if provided upstream
 $sourceStockMap = $sourceStockMap ?? [];
 if (!$sourceStockMap && $items && !empty($transfer)) {
@@ -300,17 +381,26 @@ $diff       = $metrics['diff'];
 $diffLabel  = $metrics['diffLabel'];
 $accuracy   = $metrics['accuracy'];
 
-// Calculate actual weight from items
-$estimatedWeight = 0.0;
+// Calculate total estimated weight (kg) using enriched derived_unit_weight_grams when present
+$estimatedWeight = 0.0; // kg
 if ($items) {
   foreach ($items as $item) {
-    $qty = (int)($item['counted_qty'] ?? $item['planned_qty'] ?? 0);
-    // Realistic vape product weights: average 150g per item
-    $weight = (float)($item['weight'] ?? $item['product_weight'] ?? 0.15);
-    $estimatedWeight += ($qty * $weight);
+    $qty = (int)_first($item['counted_qty'] ?? null, $item['qty_sent_total'] ?? null, $item['qty_requested'] ?? null, $item['planned_qty'] ?? 0);
+    if ($qty <= 0) continue;
+    $unitWeightG = (int)_first($item['derived_unit_weight_grams'] ?? null,
+      $item['avg_weight_grams'] ?? null,
+      $item['product_weight_grams'] ?? null,
+      $item['weight_g'] ?? null,
+      $item['unit_weight_g'] ?? null,
+      $item['category_avg_weight_grams'] ?? null,
+      $item['category_weight_grams'] ?? null,
+      $item['cat_weight_g'] ?? null,
+      100);
+    if ($unitWeightG < 1) $unitWeightG = 100;
+    $estimatedWeight += ($unitWeightG * $qty) / 1000.0;
   }
 }
-$estimatedWeight = max($estimatedWeight, 0.1); // minimum 100g
+// No arbitrary minimum clamp; reflect actual computed aggregate
 
 // Calculate distance between outlets (simplified - you'd use real coordinates)
 $distance = 0;
@@ -328,7 +418,10 @@ $satchelPrice = 8.50;
 $smallBoxPrice = 12.90;
 $mediumBoxPrice = 18.50;
 
-if ($estimatedWeight <= 3.0) {
+if ($estimatedWeight <= 0.5) {
+  $bestPrice = $satchelPrice * 0.85; // micro satchel discount tier
+  $bestOption = 'Light Satchel';
+} elseif ($estimatedWeight <= 3.0) {
   $bestPrice = $satchelPrice;
   $bestOption = 'Satchel';
 } elseif ($estimatedWeight <= 5.0) {
@@ -344,6 +437,60 @@ $carCostPerKm = 0.85; // $0.85 per km (fuel + wear)
 $carCost = $distance * $carCostPerKm;
 $carCO2PerKm = 0.21; // 210g CO2 per km
 $co2Saved = ($distance * $carCO2PerKm) / 1000; // convert to kg
+
+// ---------------------------------------------------------------------------
+// Carrier price comparison (NZ Post vs NZ Couriers) using pricing_matrix view
+// ---------------------------------------------------------------------------
+$carrierComparison = [
+  'weight_kg' => $estimatedWeight,
+  'distance_km' => $distance,
+  'quotes' => [],
+  'best' => null,
+  'note' => null
+];
+try {
+  $pdo = null;
+  if (class_exists('\\Core\\DB') && method_exists('\\Core\\DB','instance')) { $pdo = \Core\DB::instance(); }
+  elseif (function_exists('cis_pdo')) { $pdo = cis_pdo(); }
+  elseif (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) { $pdo = $GLOBALS['pdo']; }
+  if ($pdo instanceof PDO && $estimatedWeight > 0) {
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // Convert to grams for rule filtering
+    $grams = (int)ceil($estimatedWeight * 1000);
+    // Basic selection: choose cheapest container whose max_weight_grams >= grams per carrier code patterns
+    $sql = "SELECT carrier_code, container_code, container_name, max_weight_grams, price, currency\n            FROM pricing_matrix\n            WHERE (max_weight_grams IS NULL OR max_weight_grams >= :g)\n              AND (effective_from IS NULL OR effective_from <= CURRENT_DATE())\n              AND (effective_to IS NULL OR effective_to >= CURRENT_DATE())\n              AND (carrier_code LIKE 'nz_post%' OR carrier_code LIKE 'nz_courier%' OR carrier_code LIKE 'gss%')\n            ORDER BY carrier_code ASC, price ASC, COALESCE(max_weight_grams, 999999999) ASC";
+    $st = $pdo->prepare($sql);
+    $st->execute(['g' => $grams]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $picked = [];
+    foreach ($rows as $r) {
+      $cc = strtolower((string)$r['carrier_code']);
+      $norm = (str_contains($cc,'post') ? 'nz_post' : (str_contains($cc,'courier') || str_contains($cc,'gss') ? 'nz_couriers' : $cc));
+      if (!isset($picked[$norm])) {
+        $picked[$norm] = [
+          'carrier' => $norm,
+          'container' => $r['container_code'],
+          'container_name' => $r['container_name'],
+          'cap_weight_g' => $r['max_weight_grams'],
+          'price' => (float)$r['price'],
+          'currency' => $r['currency'],
+        ];
+      }
+    }
+    $carrierComparison['quotes'] = array_values($picked);
+    if ($picked) {
+      $best = null;
+      foreach ($picked as $q) { if ($best===null || $q['price'] < $best['price']) $best=$q; }
+      $carrierComparison['best'] = $best;
+    } else {
+      $carrierComparison['note'] = 'No carrier pricing rows matched weight';
+    }
+  } else {
+    $carrierComparison['note'] = 'No DB handle or zero weight';
+  }
+} catch (Throwable $e) {
+  $carrierComparison['note'] = 'Carrier compare error: '.$e->getMessage();
+}
 
 // Pack status
 $isPackaged = $isPackaged ?? false;
@@ -361,6 +508,7 @@ $bootPayload = [
     'transfer_id' => $txStringId,  // Use string ID for lock APIs
     'transfer_id_int' => $txId,    // Keep integer ID for legacy operations
     'user_id' => $currentUserId,
+  'session_id' => session_id(),
     'from_outlet' => $fromLbl,
     'to_outlet' => $toLbl,
     'has_items' => !empty($items),
@@ -376,6 +524,7 @@ $__view_vars = compact(
   'fromDisplay', 'toDisplay', 'isPackaged',
   'sourceStockMap', 'plannedSum', 'countedSum', 'diff', 'diffLabel', 'accuracy',
   'estimatedWeight', 'distance', 'bestPrice', 'bestOption', 'carCost', 'co2Saved',
+  'carrierComparison',
   'satchelPrice', 'smallBoxPrice', 'mediumBoxPrice',
   'bootPayload', 'assetVer', 'lockStatus', 'currentUserId'
 );

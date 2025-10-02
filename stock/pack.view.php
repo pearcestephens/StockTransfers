@@ -38,7 +38,7 @@ if (!function_exists('tfx_product_tag')) {
       include __DIR__ . '/views/components/breadcrumb.php';
       ?>
 
-      <div class="container-fluid animated fadeIn">
+      <div class="container-fluid animated fadeIn" id="packPageContainer">
         <div class="pack-white-container">
 
           <!-- Enhanced Store Transfer Header -->
@@ -57,8 +57,21 @@ if (!function_exists('tfx_product_tag')) {
                     <div>
                       <h3 class="mb-0" style="font-weight: 700; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 1.4rem;">
                         Store Transfer #<?= (int)$txId ?>
-                        <span class="badge ml-2" id="lockStatusBadge" style="font-size:0.5em; background: rgba(255,255,255,0.25); color: white; border: 1px solid rgba(255,255,255,0.4); text-shadow: none; padding: 2px 6px;">
-                          <?= $lockStatus['has_lock'] ? 'LOCKED' : 'UNLOCKED' ?>
+                        <span class="badge ml-2" id="lockStatusBadge" style="font-size:0.5em; background: rgba(220,53,69,0.85); color: #fff; border: 1px solid rgba(220,53,69,1); text-shadow: none; padding: 2px 6px;" title="<?= $lockStatus['has_lock'] ? 'Locked by you' : ($lockStatus['is_locked_by_other'] ? ('Locked by '.htmlspecialchars($lockStatus['holder_name']??'another user', ENT_QUOTES)) : 'No active lock') ?>">
+                          <?php
+                          // Dynamic badge label rules:
+                          // - If you have the lock: LOCKED
+                          // - If another user holds it: LOCKED (NAME)
+                          // - If no active lock: UNLOCKED
+                          if ($lockStatus['has_lock']) {
+                              echo 'LOCKED';
+                          } elseif ($lockStatus['is_locked_by_other']) {
+                              $hn = htmlspecialchars($lockStatus['holder_name'] ?? 'USER', ENT_QUOTES);
+                              echo 'LOCKED (' . $hn . ')';
+                          } else {
+                              echo 'UNLOCKED';
+                          }
+                          ?>
                         </span>
                         <span id="headerTimer" style="font-family: 'Segoe UI', sans-serif; font-weight: 600; font-size: 0.5em; color: rgba(255,255,255,0.8); margin-left: 8px;">
                           2h 45m
@@ -205,6 +218,8 @@ if (!function_exists('tfx_product_tag')) {
                   <span class="pill-icon" style="width:6px; height:6px; border-radius:50%; margin-right:6px; background-color:currentColor;"></span>
                   <span id="autosavePillText">Idle</span>
                 </div>
+                <span id="autosaveStatus" class="ml-2 small text-muted" style="font-size:11px;">&nbsp;</span>
+                <span id="autosaveLastSaved" class="ml-2 small text-muted" style="font-size:11px;"></span>
                 <div id="lastSaveTime" style="font-size: 0.75rem; color: #6c757d; margin-left: 8px; min-height: 14px;">
                   
                 </div>
@@ -220,16 +235,24 @@ if (!function_exists('tfx_product_tag')) {
             </div>
 
               <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="px-3 pt-2 pb-1 small text-muted d-flex justify-content-between align-items-center flex-wrap" aria-hidden="false">
+                  <div class="d-flex align-items-center flex-wrap" style="gap:12px;">
+                    <span><strong>Weight Source Legend:</strong> <span class="badge badge-light" style="font-size:9px; border:1px solid #ccc;">P</span> Product <span class="badge badge-light" style="font-size:9px; border:1px solid #ccc;">C</span> Category <span class="badge badge-light" style="font-size:9px; border:1px solid #ccc;">D</span> Default</span>
+                    <span id="weightSourceBreakdown" class="text-muted"></span>
+                  </div>
+                  <div class="mt-1 mt-sm-0" id="lineAnnouncement" class="sr-only" aria-live="polite" aria-atomic="true" style="position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;">Line updates announced here.</div>
+                </div>
+                <div class="table-responsive" id="transferItemsTableWrapper">
                   <table class="table table-sm table-striped mb-0" id="transferItemsTable">
                     <thead class="thead-light">
                       <tr>
                         <th style="width:50px;" class="text-center"></th>
-                        <th style="padding-left:8px; width: 45%;">Product</th>
+                        <th style="padding-left:8px; width: 40%;">Product</th>
                         <th style="width:80px;" class="text-center">Source Stock</th>
                         <th style="width:70px;" class="text-center">Planned</th>
                         <th style="width:90px;" class="text-center">Counted</th>
                         <th style="width:70px;" class="text-center">To</th>
+                        <th style="width:90px;" class="text-center">Weight</th>
                         <th style="width:60px;" class="text-center">Tag</th>
                       </tr>
                     </thead>
@@ -245,19 +268,39 @@ if (!function_exists('tfx_product_tag')) {
                     <?php else: ?>
                     <?php
                       $rowNum = 1;
+                      $totalCountedWeightG = 0; // aggregate counted weight (grams)
                       foreach ($items as $item):
                         $itemId     = (int)_first($item['id'] ?? null, $rowNum);
                         $productId  = (string)_first($item['product_id'] ?? null, $item['vend_product_id'] ?? null, '');
                         $plannedQty = (int)_first($item['qty_requested'] ?? null, $item['planned_qty'] ?? 0);
                         $countedQty = (int)($item['counted_qty'] ?? 0);
                         $stockQty   = ($productId !== '' && isset($sourceStockMap[$productId])) ? (int)$sourceStockMap[$productId] : 0;
+                        // Resolve unit weight (grams) precedence aligning with freight calculators:
+                        // 1. Product avg weight (avg_weight_grams / product_weight_grams / weight_g variants)
+                        // 2. Category avg weight (category_avg_weight_grams, category_weight_grams, cat_weight_g)
+                        // 3. System default (100g) if still missing
+                        $unitWeightG = (int)_first(
+                          $item['derived_unit_weight_grams'] ?? null,
+                          $item['avg_weight_grams'] ?? null,
+                          $item['product_weight_grams'] ?? null,
+                          $item['weight_g'] ?? null,
+                          $item['unit_weight_g'] ?? null,
+                          $item['category_avg_weight_grams'] ?? null,
+                          $item['category_weight_grams'] ?? null,
+                          $item['cat_weight_g'] ?? null,
+                          100
+                        );
+                        $weightSource = (string)_first($item['weight_source'] ?? null, (isset($item['avg_weight_grams'])||isset($item['product_weight_grams'])||isset($item['weight_g'])||isset($item['unit_weight_g'])) ? 'product' : (isset($item['category_avg_weight_grams'])||isset($item['category_weight_grams'])||isset($item['cat_weight_g']) ? 'category' : 'default'));
+                        $rowWeightG  = $unitWeightG > 0 ? $unitWeightG * max($countedQty, 0) : 0; // counted weight basis
+                        $totalCountedWeightG += $rowWeightG;
                     ?>
                       <tr id="item-row-<?= $itemId ?>"
                           class="pack-item-row"
                           data-item-id="<?= $itemId ?>"
                           data-product-id="<?= htmlspecialchars($productId, ENT_QUOTES) ?>"
                           data-planned-qty="<?= $plannedQty ?>"
-                          data-source-stock="<?= $stockQty ?>">
+                          data-source-stock="<?= $stockQty ?>"
+                          data-unit-weight-g="<?= $unitWeightG ?>">
                         <td class="text-center align-middle" style="width:50px; padding: 3px;">
                           <?php 
                             // Debug: Show what image fields are available
@@ -356,12 +399,32 @@ if (!function_exists('tfx_product_tag')) {
                                  style="text-align: center;">
                         </td>
                         <td class="text-center align-middle"><?= htmlspecialchars($toLbl, ENT_QUOTES) ?></td>
+                        <td class="text-center align-middle">
+                          <?php if ($unitWeightG > 0): ?>
+                            <?php
+                              $srcAbbr = $weightSource === 'product' ? 'P' : ($weightSource === 'category' ? 'C' : 'D');
+                              $srcTitle = $weightSource === 'product' ? 'Product specific weight' : ($weightSource === 'category' ? 'Category average weight' : 'Default fallback weight');
+                            ?>
+                            <span class="row-weight" data-unit-weight-g="<?= $unitWeightG ?>" data-weight-source="<?= htmlspecialchars($weightSource, ENT_QUOTES) ?>" data-row-weight-g="<?= $rowWeightG ?>">
+                              <?= $rowWeightG > 0 ? number_format($rowWeightG/1000, 3) . 'kg' : '—' ?>
+                            </span>
+                            <small class="text-muted d-block" style="font-size:10px;">@<?= number_format($unitWeightG/1000,3) ?>kg ea <span class="badge badge-light" title="<?= htmlspecialchars($srcTitle, ENT_QUOTES) ?>" style="font-size:9px; font-weight:600; border:1px solid #ddd;"><?= $srcAbbr ?></span></small>
+                          <?php else: ?>
+                            <span class="row-weight text-muted" data-unit-weight-g="0">—</span>
+                            <small class="text-warning d-block" style="font-size:10px;">no wt</small>
+                          <?php endif; ?>
+                        </td>
                         <td class="text-center align-middle mono" title="Product Tag"><?= htmlspecialchars(tfx_product_tag((string)$txId, $rowNum), ENT_QUOTES) ?></td>
                       </tr>
                     <?php $rowNum++; endforeach; ?>
                     <?php endif; ?>
                     </tbody>
                     <tfoot>
+                      <?php
+                        if (!isset($estimatedWeight) || !is_numeric($estimatedWeight)) {
+                          $estimatedWeight = $totalCountedWeightG / 1000.0; // fallback derive
+                        }
+                      ?>
                       <tr>
                         <td colspan="3" class="text-right font-weight-bold">Totals:</td>
                         <td class="text-center" id="plannedTotalFooter"><?= (int)$plannedSum ?></td>
@@ -370,16 +433,169 @@ if (!function_exists('tfx_product_tag')) {
                           <small class="d-block text-muted">Diff: <span id="diffTotalFooter"><?= htmlspecialchars($diffLabel, ENT_QUOTES) ?></span></small>
                         </td>
                         <td></td>
-                        <td class="text-center">
-                          <span class="font-weight-bold text-info"><?= number_format($estimatedWeight, 1) ?>kg</span>
+                        <td class="text-center" id="totalWeightFooter">
+                          <span class="font-weight-bold text-info"><span id="totalWeightFooterKgValue"><?= number_format($estimatedWeight, 2) ?></span>kg</span>
                           <small class="d-block text-muted">Total Weight</small>
                         </td>
+                        <td></td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               </div>
             </section>
+            <script>
+            // Dynamic weight recalculation script
+            (function(){
+              function recalcWeights(){
+                let totalG = 0;
+                let srcCounts = {product:0, category:0, default:0};
+                const rows = document.querySelectorAll('#transferItemsTable tbody tr');
+                rows.forEach(tr => {
+                  const unitG = parseInt(tr.getAttribute('data-unit-weight-g')||'0',10) || 0;
+                  const input = tr.querySelector('.qty-input');
+                  if(!input || unitG <= 0) return;
+                  const qty = parseInt(input.value || input.getAttribute('value') || '0', 10) || 0;
+                  const rowWeightG = unitG * qty;
+                  const span = tr.querySelector('.row-weight');
+                  if(span){
+                    if(qty > 0){ span.textContent = (rowWeightG/1000).toFixed(rowWeightG >= 100000 ? 2 : 3) + 'kg'; }
+                    else { span.textContent = '—'; }
+                    span.setAttribute('data-row-weight-g', rowWeightG);
+                    const src = span.getAttribute('data-weight-source');
+                    if(src && srcCounts[src] !== undefined) srcCounts[src]++;
+                  }
+                  totalG += rowWeightG;
+                });
+                const totalSpan = document.getElementById('totalWeightFooterKgValue');
+                if(totalSpan){ totalSpan.textContent = (totalG/1000).toFixed(2); }
+                const breakdownEl = document.getElementById('weightSourceBreakdown');
+                if(breakdownEl){
+                  const totalLines = Object.values(srcCounts).reduce((a,b)=>a+b,0);
+                  if(totalLines>0){
+                    const pct = k=>((srcCounts[k]/totalLines)*100).toFixed(0)+'%';
+                    breakdownEl.textContent = `P ${srcCounts.product} (${pct('product')}) • C ${srcCounts.category} (${pct('category')}) • D ${srcCounts.default} (${pct('default')})`;
+                  } else breakdownEl.textContent='';
+                }
+              }
+              document.addEventListener('input', (e)=>{ if(e.target && e.target.classList.contains('qty-input')) recalcWeights(); });
+              if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', recalcWeights); else setTimeout(recalcWeights, 50);
+              window.recalcTransferWeights = recalcWeights; // optional global hook
+
+              // Keyboard navigation for qty inputs (Arrow keys + Enter)
+              function focusNext(current, delta){
+                const inputs = Array.from(document.querySelectorAll('#transferItemsTable .qty-input'));
+                const idx = inputs.indexOf(current);
+                if(idx === -1) return;
+                const next = inputs[idx + delta];
+                if(next){ next.focus(); next.select && next.select(); }
+              }
+              document.addEventListener('keydown', function(e){
+                const t = e.target;
+                if(!t || !t.classList || !t.classList.contains('qty-input')) return;
+                if(e.key === 'ArrowDown'){ e.preventDefault(); focusNext(t, +1); }
+                else if(e.key === 'ArrowUp'){ e.preventDefault(); focusNext(t, -1); }
+                else if(e.key === 'Enter'){ e.preventDefault(); focusNext(t, +1); }
+              });
+
+              // Diff announcement (accessibility)
+              const announceEl = document.getElementById('lineAnnouncement');
+              let lastDiffMap = new Map();
+              function announceChanges(){
+                const rows = document.querySelectorAll('#transferItemsTable tbody tr');
+                let messages=[];
+                rows.forEach(tr=>{
+                  const input=tr.querySelector('.qty-input');
+                  const planned=parseInt(tr.getAttribute('data-planned-qty')||'0',10)||0;
+                  if(!input) return;
+                  const counted=parseInt(input.value||'0',10)||0;
+                  const rid=tr.getAttribute('data-item-id')||'';
+                  const key=rid;
+                  const prev=lastDiffMap.get(key);
+                  const state = counted===planned ? 'match' : (counted>planned ? 'over' : 'under');
+                  if(prev && prev!==state){ messages.push(`Line ${rid}: now ${state}`); }
+                  lastDiffMap.set(key,state);
+                });
+                if(messages.length && announceEl){ announceEl.textContent = messages.join('. '); }
+              }
+              document.addEventListener('input', (e)=>{ if(e.target && e.target.classList.contains('qty-input')) announceChanges(); });
+              setTimeout(announceChanges, 1200);
+            })();
+            </script>
+
+            <!-- Carrier Price Comparison (NZ Post vs NZ Couriers) -->
+            <?php if (!empty($carrierComparison) && is_array($carrierComparison)): ?>
+              <section class="card mb-4" id="carrierComparisonCard" aria-labelledby="carrierComparisonHeading">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                  <div class="d-flex align-items-center">
+                    <i class="fa fa-balance-scale mr-2 text-muted" aria-hidden="true"></i>
+                    <h6 class="mb-0 font-weight-bold" id="carrierComparisonHeading">Carrier Price Comparison</h6>
+                  </div>
+                  <small class="text-muted">Weight: <?= number_format((float)($carrierComparison['weight_kg'] ?? 0), 2) ?>kg • Distance: <?= number_format((float)($carrierComparison['distance_km'] ?? 0), 0) ?>km</small>
+                </div>
+                <div class="card-body p-0">
+                  <?php if (!empty($carrierComparison['quotes'])): ?>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped mb-0" aria-label="Carrier pricing comparison">
+                        <thead class="thead-light">
+                          <tr>
+                            <th style="width:160px;">Carrier</th>
+                            <th>Container</th>
+                            <th style="width:110px;" class="text-right">Cap (kg)</th>
+                            <th style="width:110px;" class="text-right">Price</th>
+                            <th style="width:140px;" class="text-right">Cost / kg</th>
+                            <th style="width:80px;" class="text-center">Best</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <?php
+                            $bestCode = isset($carrierComparison['best']) ? strtolower($carrierComparison['best']['carrier'] ?? '') : '';
+                            foreach ($carrierComparison['quotes'] as $q):
+                              $c = strtolower($q['carrier'] ?? '');
+                              $isBest = $bestCode === $c;
+                              $capKg = !empty($q['cap_weight_g']) ? number_format(((float)$q['cap_weight_g'])/1000, 2) : '—';
+                              $price = number_format((float)$q['price'], 2);
+                              $weightBasis = max(0.0001, (float)($carrierComparison['weight_kg'] ?? 0));
+                              $costPerKg = number_format($weightBasis>0 ? ((float)$q['price'] / $weightBasis) : 0, 2);
+                              $label = $c === 'nz_post' ? 'NZ Post' : ($c === 'nz_couriers' ? 'NZ Couriers' : strtoupper($c));
+                          ?>
+                            <tr class="<?= $isBest ? 'table-success' : '' ?>">
+                              <td class="align-middle font-weight-semibold"><?= htmlspecialchars($label, ENT_QUOTES) ?></td>
+                              <td class="align-middle small">
+                                <span class="d-block font-weight-500"><?= htmlspecialchars($q['container'] ?? ($q['container_name'] ?? '—'), ENT_QUOTES) ?></span>
+                                <?php if (!empty($q['container_name']) && ($q['container_name'] !== $q['container'])): ?>
+                                  <small class="text-muted"><?= htmlspecialchars($q['container_name'], ENT_QUOTES) ?></small>
+                                <?php endif; ?>
+                              </td>
+                              <td class="align-middle text-right mono"><?= $capKg ?></td>
+                              <td class="align-middle text-right mono">$<?= $price ?></td>
+                              <td class="align-middle text-right mono">$<?= $costPerKg ?></td>
+                              <td class="align-middle text-center">
+                                <?php if ($isBest): ?>
+                                  <span class="badge badge-success" style="font-size:10px;">Best</span>
+                                <?php else: ?>
+                                  <span class="text-muted" style="font-size:10px;">—</span>
+                                <?php endif; ?>
+                              </td>
+                            </tr>
+                          <?php endforeach; ?>
+                        </tbody>
+                      </table>
+                    </div>
+                    <?php if (!empty($carrierComparison['best'])): ?>
+                      <div class="p-2 small border-top bg-light">
+                        <strong>Recommendation:</strong> <?= htmlspecialchars(($carrierComparison['best']['carrier'] ?? 'Unknown'), ENT_QUOTES) ?> at $<?= number_format((float)($carrierComparison['best']['price'] ?? 0), 2) ?>.
+                      </div>
+                    <?php endif; ?>
+                  <?php else: ?>
+                    <div class="p-3 small text-muted">
+                      <i class="fa fa-info-circle mr-1"></i><?= htmlspecialchars($carrierComparison['note'] ?? 'No carrier pricing available', ENT_QUOTES) ?>
+                    </div>
+                  <?php endif; ?>
+                </div>
+              </section>
+            <?php endif; ?>
+
 
           <!-- Delivery Tracking Panel (manual / internal) -->
           <div id="deliveryTrackingContainer" class="mt-4">
@@ -457,6 +673,21 @@ if (!function_exists('tfx_product_tag')) {
           </div>
 
         </div><!-- /.pack-white-container -->
+        <!-- Lock Request Toolbar (hidden by default; shown when locked out) -->
+        <div id="lockRequestToolbar" class="lock-request-toolbar" style="display:none;">
+          <div class="toolbar-inner">
+            <span class="lock-msg"><i class="fa fa-lock mr-2"></i><span id="lockToolbarStatusText">This transfer is locked by <span class="lock-holder-name" id="lockHolderName">another user</span>.</span></span>
+            <button type="button" id="requestLockBtn" class="btn btn-sm btn-light ml-2">
+              <i class="fa fa-key mr-1"></i> Request Lock
+            </button>
+            <button type="button" id="retryAcquireBtn" class="btn btn-sm btn-outline-warning ml-1">
+              <i class="fa fa-sync mr-1"></i> Retry
+            </button>
+            <button type="button" id="forceRefreshBtn" class="btn btn-sm btn-outline-light ml-1">
+              <i class="fa fa-redo mr-1"></i> Refresh
+            </button>
+          </div>
+        </div>
       </div><!-- /.container-fluid -->
     </main>
   </div>
@@ -631,10 +862,141 @@ if (!function_exists('tfx_product_tag')) {
   <script src="/modules/transfers/stock/assets/js/00-universal-lock-system.js?v=<?= (int)$assetVer ?>"></script>
   <script src="/modules/transfers/stock/assets/js/pack-lock.js?v=<?= (int)$assetVer ?>"></script>
   <script src="/modules/transfers/stock/assets/js/pack-unified.js?v=<?= (int)$assetVer ?>" defer></script>
+  <script src="/modules/transfers/stock/assets/js/pack-autosave.js?v=<?= (int)$assetVer ?>" defer></script>
+  <!-- Modular ES build (provides mixin system); safe to include alongside shim -->
+  <script type="module" src="/modules/transfers/stock/assets/js/pack-bootstrap.module.js?v=<?= (int)$assetVer ?>"></script>
+  <script>
+    // Inline bridge for autosave status spans (lightweight, idempotent)
+    (function(){
+      function set(txt){ var el=document.getElementById('autosaveStatus'); if(el) el.textContent=txt||''; }
+      function setLast(ts){ var el=document.getElementById('autosaveLastSaved'); if(!el) return; var d = ts? new Date(ts): new Date(); if(!isNaN(d.getTime())) el.textContent='Last saved: '+d.toLocaleTimeString(); }
+      document.addEventListener('packautosave:state', function(ev){
+        var st=ev.detail && ev.detail.state; var p=ev.detail && ev.detail.payload; if(st==='saving') set('Saving…'); else if(st==='saved'){ set('Saved'); setLast(p && (p.saved_at||p.savedAt)); } else if(st==='error') set('Retry'); else if(st==='noop'){ /* keep prior */ } });
+    })();
+  </script>
 
   <!-- Pack System Initialization -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      /* =============================================================
+       * LOCK REQUEST COUNTDOWN + DECISION MODAL INTEGRATION
+       * ============================================================= */
+  const TRANSFER_ID = window.DISPATCH_BOOT?.transfer_id;
+  const SESSION_ID = window.DISPATCH_BOOT?.session_id || (window.__PACK_SESSION = window.__PACK_SESSION || (Math.random().toString(36).slice(2)));
+      const USER_ID = window.DISPATCH_BOOT?.user_id;
+      const POLL_INTERVAL_MS = 3000;
+      let pollTimer = null;
+      let countdownTimer = null;
+      let latestRequest = null;
+      const toolbar = document.getElementById('lockRequestToolbar');
+      const countdownEl = document.getElementById('lockCountdown');
+      const decisionModalEl = document.getElementById('lockRequestDecisionModal');
+      const diagnosticsPanel = document.getElementById('lockDiagnosticsPanel');
+      const diagPre = diagnosticsPanel ? diagnosticsPanel.querySelector('pre') : null;
+
+      // ------------------------------------------------------------------
+      // Tab Leadership & BroadcastChannel (single SSE connection pattern)
+      // ------------------------------------------------------------------
+      const LEADER_KEY = 'pack_lock_leader_'+TRANSFER_ID+'_'+USER_ID;
+      const HEARTBEAT_MS = 3000;
+      const LEADER_TIMEOUT_MS = 8000; // if heartbeat stale for >8s others can take over
+      let isLeader = false; let heartbeatTimer = null; let takeoverCheckTimer = null;
+      const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('pack-lock-'+TRANSFER_ID+'-'+USER_ID) : null;
+
+      function nowTs(){ return Date.now(); }
+      function readLeader(){ try { return JSON.parse(localStorage.getItem(LEADER_KEY)||'{}'); } catch(e){ return {}; } }
+      function writeLeader(payload){ localStorage.setItem(LEADER_KEY, JSON.stringify(payload)); }
+      function claimLeadership(){ isLeader = true; writeLeader({ sid: SESSION_ID, ts: nowTs() }); startHeartbeat(); logDiag('Became leader (SSE active)'); initOrRestartSSE(); }
+      function startHeartbeat(){ if(heartbeatTimer) clearInterval(heartbeatTimer); heartbeatTimer = setInterval(()=>{ if(!isLeader) return; writeLeader({ sid: SESSION_ID, ts: nowTs() }); }, HEARTBEAT_MS); }
+      function ensureLeadership(){ const cur = readLeader(); if(!cur.sid || (nowTs()- (cur.ts||0)) > LEADER_TIMEOUT_MS){ claimLeadership(); } else if(cur.sid === SESSION_ID){ isLeader=true; startHeartbeat(); } else { isLeader=false; }
+        if(!takeoverCheckTimer){ takeoverCheckTimer = setInterval(()=>{ if(isLeader) return; const c=readLeader(); if(!c.sid || (nowTs()- (c.ts||0)) > LEADER_TIMEOUT_MS){ claimLeadership(); } }, 2000); }
+      }
+
+      bc && bc.addEventListener('message', (ev)=>{ if(isLeader) return; const msg=ev.data||{}; if(msg.type==='lock-update'){ handleUpdate(msg.data, {source:'bc'}); } });
+
+  function logDiag(msg,obj){ try { console.log('[LockFlow]',msg,obj||''); if(diagPre){ const line = '['+new Date().toLocaleTimeString()+'] '+msg+(obj? (' '+JSON.stringify(obj).slice(0,400)):''); diagPre.textContent = line + '\n' + diagPre.textContent; } } catch(e){} }
+
+      function setToolbarState(state){ if(!toolbar) return; toolbar.dataset.state = state; }
+  function secondsRemainingPairs(req){ if(!req) return {holder:null, requester:null}; const now=Date.now(); const holder=req.holder_deadline? Date.parse(req.holder_deadline): (req.grant_at? Date.parse(req.grant_at):null); const requester=req.requester_deadline? Date.parse(req.requester_deadline):null; return { holder: holder? Math.max(0, Math.floor((holder-now)/1000)) : null, requester: requester? Math.max(0, Math.floor((requester-now)/1000)) : null }; }
+  function paintCountdown(pair){ if(!countdownEl) return; if(!pair || (pair.holder==null && pair.requester==null)){ countdownEl.textContent=''; return; } let txt=''; if(pair.requester!=null && pair.requester>0) txt += pair.requester+'s (you) '; if(pair.holder!=null) txt += '| '+pair.holder+'s holder'; countdownEl.textContent=txt.trim(); countdownEl.classList.toggle('urgent', pair.holder!==null && pair.holder<=3); }
+      function clearTimers(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null;} if(countdownTimer){ clearInterval(countdownTimer); countdownTimer=null;} }
+      function beginCountdown(){ clearInterval(countdownTimer); countdownTimer=setInterval(()=>{ if(!latestRequest){ paintCountdown(null); return; } const pair=secondsRemainingPairs(latestRequest); paintCountdown(pair); if(pair.holder===0){ logDiag('Holder deadline zero – awaiting auto-grant'); } },1000); }
+
+      function showDecisionModal(req){ if(!decisionModalEl) return; const holderField = decisionModalEl.querySelector('[data-lock-holder]'); if(holderField){ holderField.textContent = (req.holder_name||req.holderName||'User'); } decisionModalEl.style.display='block'; document.body.classList.add('modal-open'); focusTrap(decisionModalEl); }
+      function hideDecisionModal(){ if(!decisionModalEl) return; decisionModalEl.style.display='none'; document.body.classList.remove('modal-open'); releaseFocusTrap(); }
+
+      // Simple focus trap
+      let lastFocused = null; function focusTrap(container){ lastFocused=document.activeElement; const focusables = container.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'); const first=focusables[0]; const last=focusables[focusables.length-1]; function loop(e){ if(e.key==='Tab'){ if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); } else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); } } else if(e.key==='Escape'){ e.preventDefault(); /* block esc */ } } container.addEventListener('keydown', loop); container.__trapHandler = loop; if(first) setTimeout(()=>first.focus(),50); }
+      function releaseFocusTrap(){ if(decisionModalEl && decisionModalEl.__trapHandler){ decisionModalEl.removeEventListener('keydown', decisionModalEl.__trapHandler); delete decisionModalEl.__trapHandler; } if(lastFocused) try{ lastFocused.focus(); }catch(e){} }
+
+      let visibilityPaused=false;
+      async function poll(){ if(!isLeader){ return; } if(document.hidden){ visibilityPaused=true; return; } visibilityPaused=false; try { const res = await fetch('/modules/transfers/stock/api/lock_request_poll.php?transfer_id='+encodeURIComponent(TRANSFER_ID), { credentials:'same-origin'}); const json = await res.json().catch(()=>({})); if(!json.success){ logDiag('Poll fail', json); return; } handleUpdate(json, {source:'poll'}); } catch(err){ logDiag('Poll error', err); }
+      }
+
+      function updateLockUI(lock, req){ try {
+        const holderName = lock.holder_name||lock.holderName||req?.holder_name||'';
+        const holderSpan = document.getElementById('lockHolderName'); if(holderSpan) holderSpan.textContent = holderName||'';
+        const hasLock = !!lock.has_lock;
+        document.body.classList.toggle('pack-locked-out', !hasLock);
+        if(toolbar){ toolbar.style.display='block'; toolbar.classList.toggle('locked-by-other', !hasLock && holderName && holderName!==window.DISPATCH_BOOT?.user_name); toolbar.classList.toggle('lock-owned-by-me', hasLock); }
+        // Disable editing inputs when not holding lock (read-only view) but keep visual clarity
+        document.querySelectorAll('#transferItemsTableWrapper input.qty-input').forEach(inp=>{ inp.readOnly = !hasLock; inp.classList.toggle('readonly-no-lock', !hasLock); });
+        // Provide accessibility notice once when locked-out
+        if(!hasLock && !document.getElementById('lockAriaNote')){
+          const note = document.createElement('div');
+          note.id='lockAriaNote';
+            note.className='sr-only';
+          note.textContent='Read only view - another user holds the lock.';
+          document.body.appendChild(note);
+        }
+      } catch(e){ console.warn('updateLockUI failed', e); }
+      }
+
+      // Decision actions
+      document.addEventListener('click', function(ev){ const t=ev.target; if(t.matches('[data-lock-decision]')){ ev.preventDefault(); const decision=t.getAttribute('data-lock-decision'); if(!latestRequest){ return; } decideRequest(latestRequest.request_id, decision==='approve'); } if(t.matches('#lockDiagToggle')){ ev.preventDefault(); if(!diagnosticsPanel) return; diagnosticsPanel.style.display = diagnosticsPanel.style.display==='none'?'block':'none'; } });
+
+      async function decideRequest(id, approve){ try { const res = await fetch('/modules/transfers/stock/api/lock_request_decide.php',{ method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({ request_id: id, decision: approve? 'grant':'decline' }) }); const json = await res.json().catch(()=>({})); logDiag('Decision response', json); if(json.success){ hideDecisionModal(); await poll(); } else { window.PackToast?.error('Decision failed'); }
+      } catch(err){ logDiag('Decision error', err); }
+      }
+
+      // Start polling immediately if there's a lock holder different from us or we do not own lock
+      let esRef=null;
+      function initOrRestartSSE(){ if(!isLeader) return false; if(esRef){ try{ esRef.close(); }catch(e){} }
+        if(!window.EventSource || !TRANSFER_ID) return false;
+        try {
+          esRef = new EventSource('/modules/transfers/stock/api/lock_request_events.php?transfer_id='+encodeURIComponent(TRANSFER_ID));
+          esRef.addEventListener('lock', ev => { if(document.hidden) return; const data = JSON.parse(ev.data||'{}'); handleUpdate(data,{source:'sse'}); bc && bc.postMessage({type:'lock-update', data}); });
+          esRef.addEventListener('error', () => { logDiag('SSE error – will retry leadership'); setTimeout(()=>{ if(isLeader) initOrRestartSSE(); }, 2500); });
+          esRef.onopen = () => { logDiag('SSE connected (leader)'); };
+          window.__LOCK_SSE = esRef; return true;
+        } catch(e){ logDiag('SSE init failed', e); return false; }
+      }
+      function handleUpdate(data, ctx){ latestRequest = data; const lock = data.lock_status||{}; if(lock && Object.keys(lock).length){ window.lockStatus = lock; } updateLockUI(window.lockStatus||{}, latestRequest); if(data.action_required){ showDecisionModal(latestRequest); } else { hideDecisionModal(); } if(data.state==='pending'){ beginCountdown(); } else { paintCountdown(null); } }
+
+      // Leadership election & start
+      ensureLeadership();
+      if(isLeader){ // start poll fallback timer even with SSE (if SSE not supported)
+        const sseOk = initOrRestartSSE();
+        if(!sseOk && TRANSFER_ID){ poll(); pollTimer = setInterval(poll, POLL_INTERVAL_MS); }
+      }
+      document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ return; } ensureLeadership(); if(isLeader){ if(!esRef){ initOrRestartSSE(); } else { poll(); } } });
+
+      // Expose for manual debugging
+      window.__LOCK_REQUEST_DEBUG = { poll, decideRequest };
+
+      // Initial lock UI enforcement before system init
+      (function initialLockPaint(){
+        try {
+          const ls = (window.lockStatus||{});
+          if(ls && !ls.has_lock){ window.document.body.classList.add('pack-locked-out'); }
+          if(ls && (ls.is_locked_by_other||ls.isLockedByOther)){
+            const holder = ls.holder_name||ls.holderName||ls.lockedByName||'another user';
+            const tb = document.getElementById('lockRequestToolbar');
+            if(tb){ tb.style.display='block'; }
+            const hn = document.getElementById('lockHolderName'); if(hn) hn.textContent=holder;
+          }
+        } catch(e){ console.warn('Initial lock paint failed', e); }
+      })();
       // Prevent duplicate initialization if script included twice
       if (window.packSystem && window.packSystem.__alive) {
         console.warn('[PackSystem] Init skipped (already active)');
@@ -666,19 +1028,129 @@ if (!function_exists('tfx_product_tag')) {
           hasBoot: !!window.DISPATCH_BOOT
         });
       }
+
+      // Fallback bindings (in case modular system failed to attach UI listeners)
+      (function fallbackButtons(){
+        if (window.packSystem && typeof window.packSystem.autofillQuantities === 'function') return; // primary system active
+        const log = (...a)=>console.warn('[PackSystem:FALLBACK]',...a);
+        function plannedFor(el){ return parseInt(el.getAttribute('data-planned')||el.dataset.planned||'0',10)||0; }
+        function updateTotals(){
+          let counted=0, planned=0; const inputs=document.querySelectorAll('.qty-input, input[name^="counted_qty"]');
+          inputs.forEach(i=>{ const q=parseInt(i.value)||0; counted+=q; planned+=plannedFor(i); });
+          const c=document.getElementById('countedTotalFooter'); if(c) c.textContent=counted;
+          const p=document.getElementById('plannedTotalFooter'); if(p && !p.textContent.trim()) p.textContent=planned;
+          const d=document.getElementById('diffTotalFooter'); if(d) { const diff=counted-planned; d.textContent= diff===0? 'OK' : (diff>0? '+'+diff : diff); }
+          if (window.recalcTransferWeights) { try { window.recalcTransferWeights(); } catch(e){} }
+        }
+        function gatherDraft(){ const draft={ transfer_id: parseInt(document.querySelector('[data-txid]')?.getAttribute('data-txid')||'0',10)||0, counted_qty:{}, notes:'', timestamp:new Date().toISOString() }; document.querySelectorAll('.qty-input, input[name^="counted_qty"]').forEach(inp=>{ let id=null; const m=(inp.name||'').match(/counted_qty\[([^\]]+)\]/); if(m) id=m[1]; if(!id) id=inp.dataset.productId; const v=parseInt(inp.value)||0; if(id && v>0) draft.counted_qty[id]=v; }); const notes=document.querySelector('#notesForTransfer,[name="notes"]'); if(notes && notes.value) draft.notes=notes.value; return draft; }
+  async function saveDraft(){ const pill=document.getElementById('autosavePillText'); const ls=window.lockStatus||{}; if(!ls.has_lock){ if(pill) pill.textContent='LOCK'; log('Blocked draft save - no lock held'); return; } if(pill) pill.textContent='Saving…'; const payload=gatherDraft(); if(Object.keys(payload.counted_qty).length===0){ if(pill) pill.textContent='Idle'; return; } try { const res=await fetch('/modules/transfers/stock/api/draft_save_api.php',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload), credentials:'same-origin' }); const json=await res.json().catch(()=>({})); if(res.status===423){ if(pill) pill.textContent='Lock'; log('Lock not held for draft save (423)'); return; } if(res.ok && json.success){ if(pill) pill.textContent='Saved'; const last=document.getElementById('autosaveLastSaved'); if(last) last.textContent='Last saved: '+ new Date().toLocaleTimeString(); } else { if(pill) pill.textContent='Retry'; log('Draft save failed', json); } } catch(err){ if(pill) pill.textContent='Error'; log('Draft save error',err); } }
+        function setTrackingMode(mode){ const mBtn=document.getElementById('trackModeManual'); const iBtn=document.getElementById('trackModeInternal'); if(mBtn) mBtn.classList.toggle('active', mode==='manual'); if(iBtn) iBtn.classList.toggle('active', mode==='internal'); const form=document.getElementById('manualTrackingForm'); if(form) form.setAttribute('data-mode', mode); }
+        function addTrackingEntry(){ const tBody=document.getElementById('manualTrackingTbody'); if(!tBody) return; const input=document.getElementById('trackingInput'); const carrier=document.getElementById('carrierSelect'); const notes=document.getElementById('trackingNotes'); const num=(input?.value||'').trim(); if(!num) return; const carrierTxt=carrier && carrier.options[carrier.selectedIndex] ? carrier.options[carrier.selectedIndex].text : 'Carrier'; const mode=document.getElementById('manualTrackingForm')?.getAttribute('data-mode')||'manual'; const row=document.createElement('tr'); row.innerHTML=`<td class='text-center'></td><td class='mono'>${num.replace(/</g,'&lt;')}</td><td>${carrierTxt.replace(/</g,'&lt;')}</td><td>${(notes?.value||'').replace(/</g,'&lt;')}</td><td>${mode}</td><td class='text-center'><button type='button' class='btn btn-sm btn-outline-danger' data-action='del-track' title='Delete' aria-label='Delete'>&times;</button></td>`; const empty=tBody.querySelector('.tracking-empty'); if(empty) empty.remove(); tBody.appendChild(row); if(input) input.value=''; if(notes) notes.value=''; const addBtn=document.getElementById('addTrackingBtn'); if(addBtn) addBtn.disabled=true; saveDraft(); }
+        document.addEventListener('click', function(e){
+          const t=e.target;
+            if (t.closest && t.closest('#autofillBtn')) { e.preventDefault(); log('Autofill (fallback)'); let filled=0; document.querySelectorAll('.qty-input, input[name^="counted_qty"]').forEach(inp=>{ const p=plannedFor(inp); if(p>0){ inp.value=p; inp.dispatchEvent(new Event('input',{bubbles:true})); filled++; }}); updateTotals(); }
+            else if (t.closest && t.closest('#resetBtn')) { e.preventDefault(); log('Reset (fallback)'); document.querySelectorAll('.qty-input, input[name^="counted_qty"]').forEach(inp=>{ if(inp.value){ inp.value=''; inp.dispatchEvent(new Event('input',{bubbles:true})); }}); updateTotals(); }
+            else if (t.closest && t.closest('#savePackBtn')) { e.preventDefault(); log('Manual save (fallback)'); saveDraft(); }
+            else if (t.closest && t.closest('#trackModeManual')) { e.preventDefault(); setTrackingMode('manual'); }
+            else if (t.closest && t.closest('#trackModeInternal')) { e.preventDefault(); setTrackingMode('internal'); }
+            else if (t.closest && t.closest('#addTrackingBtn')) { e.preventDefault(); addTrackingEntry(); }
+            else if (t.matches && t.matches('[data-action="del-track"]')) { e.preventDefault(); const r=t.closest('tr'); if(r) r.remove(); }
+        });
+        document.addEventListener('input', function(e){ if(e.target && (e.target.matches('.qty-input')||e.target.matches('input[name^="counted_qty"]'))) { updateTotals(); saveDraft(); } if(e.target && e.target.id==='trackingInput'){ const addBtn=document.getElementById('addTrackingBtn'); if(addBtn) addBtn.disabled = e.target.value.trim()===''; } });
+        updateTotals();
+        log('Fallback button handlers active (extended)');
+      })();
+
+      // Toolbar button handlers (works for both modular + fallback)
+      document.addEventListener('click', function(ev){
+        const t=ev.target;
+        if(t.closest && t.closest('#requestLockBtn')){ ev.preventDefault(); if(window.packSystem?.requestLockAccess){ window.packSystem.requestLockAccess(); } else { window.PackToast?.info('Attempting lock request…'); fetch('/modules/transfers/stock/api/lock_request.php?tx='+encodeURIComponent(window.DISPATCH_BOOT?.transfer_id||'')); } }
+        else if(t.closest && t.closest('#retryAcquireBtn')){ ev.preventDefault(); if(window.packSystem?.modules?.lockSystem?.acquireLock){ window.packSystem.modules.lockSystem.acquireLock().then(r=>{ if(r?.success){ window.PackToast?.success('Lock acquired'); } else { window.PackToast?.warning('Still locked'); } }); } }
+        else if(t.closest && t.closest('#forceRefreshBtn')){ ev.preventDefault(); location.reload(); }
+      });
     });
   </script>
 
-    </main>
+  <!-- Lock Request Decision Modal (cannot click out) -->
+  <div id="lockRequestDecisionModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:10001;">
+    <div style="max-width:480px; margin:10vh auto; background:#fff; border-radius:8px; padding:24px; box-shadow:0 4px 18px rgba(0,0,0,.4); position:relative;">
+      <h4 style="margin-top:0; font-weight:600;">Lock Request</h4>
+      <p>Another user is requesting control of this transfer. You currently hold the lock.</p>
+      <p><strong>Requestor:</strong> <span data-lock-holder></span></p>
+      <p>If you approve, you will immediately lose edit access.</p>
+      <div class="d-flex justify-content-end gap-2" style="gap:10px;">
+        <button type="button" class="btn btn-outline-secondary" data-lock-decision="decline">Decline</button>
+        <button type="button" class="btn btn-primary" data-lock-decision="approve">Approve Transfer</button>
+      </div>
+    </div>
   </div>
 
-    <!-- Footer templates -->
-  <?php include $DOCUMENT_ROOT . '/assets/template/personalisation-menu.php'; ?>
-  <?php
-    $htmlFooterPath = rtrim($DOCUMENT_ROOT,'/') . '/assets/template/html-footer.php';
-    if (is_file($htmlFooterPath)) { include $htmlFooterPath; }
-    include $DOCUMENT_ROOT . '/assets/template/footer.php';
-  ?>
+  <!-- Diagnostics Panel -->
+  <div id="lockDiagnosticsPanel">
+    <h6>Lock Diagnostics</h6>
+    <pre></pre>
+    <button id="lockDiagToggle" class="btn btn-sm btn-outline-light">Close</button>
+  </div>
 
+  <!-- Lock Origin Banner (new) -->
+  <div id="lockOriginBanner" style="display:none; position:relative; z-index:5;">
+    <div id="lockOriginInner" style="background:linear-gradient(90deg,#b31217,#e52d27);color:#fff;font-size:12px;font-weight:600;letter-spacing:.5px;padding:4px 10px;border-radius:0 0 6px 6px;box-shadow:0 2px 4px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;">
+      <i class="fa fa-lock"></i>
+      <span id="lockOriginText">Locked</span>
+    </div>
+  </div>
+  <script>
+  (function(){
+    function detectLockOrigin(lock){
+      if(!lock) return { reason:'unknown', text:'Lock status unknown' };
+      const currentUserId = (window.DISPATCH_BOOT && window.DISPATCH_BOOT.user_id) || (window.bootPayload && window.bootPayload.user_id) || null;
+      const holderId = lock.holder_id || lock.holderId || null;
+      if(lock.has_lock){
+        return { reason:'owned', text:'You hold the lock' };
+      }
+      if(lock.is_locked_by_other || lock.isLockedByOther){
+        if(holderId && currentUserId && String(holderId) === String(currentUserId)){
+          // Another browser / tab (different session) of SAME user
+          return { reason:'same-user-other-session', text:'Locked in another browser/session of yours' };
+        }
+        const holderName = lock.holder_name || lock.holderName || 'Another user';
+        return { reason:'other-user', text:'Locked by ' + holderName };
+      }
+      return { reason:'unlocked', text:'Not locked' };
+    }
+    function renderLockOrigin(lock){
+      const banner = document.getElementById('lockOriginBanner');
+      const textEl = document.getElementById('lockOriginText');
+      if(!banner || !textEl) return;
+      const info = detectLockOrigin(lock);
+      if(info.reason === 'unlocked') { banner.style.display='none'; return; }
+      textEl.textContent = info.text;
+      // Different styling variants
+      if(info.reason === 'other-user'){
+        banner.style.display='block';
+        textEl.parentElement.style.background='linear-gradient(90deg,#8b1111,#5d0c0c)';
+      } else if(info.reason === 'same-user-other-session'){
+        banner.style.display='block';
+        textEl.parentElement.style.background='linear-gradient(90deg,#c07d00,#d69e00)';
+      } else if(info.reason === 'owned') {
+        banner.style.display='block';
+        textEl.parentElement.style.background='linear-gradient(90deg,#146c2e,#0f4d21)';
+      } else {
+        banner.style.display='block';
+        textEl.parentElement.style.background='linear-gradient(90deg,#555,#333)';
+      }
+    }
+    window.renderLockOrigin = renderLockOrigin;
+    // Hook into existing status update
+    const origUpdate = window.packSystem?.updateLockStatusDisplay;
+    if(window.packSystem){
+      window.packSystem.updateLockStatusDisplay = function(){
+        if(typeof origUpdate === 'function'){ origUpdate.apply(window.packSystem, arguments); }
+        try { renderLockOrigin(window.lockStatus||{}); } catch(e) {}
+      };
+    }
+    document.addEventListener('DOMContentLoaded', function(){ renderLockOrigin(window.lockStatus||{}); });
+  })();
+  </script>
 </body>
 </html>

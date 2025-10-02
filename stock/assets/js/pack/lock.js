@@ -33,6 +33,25 @@ export const LockMixin = Base => class extends Base {
   updateLockStatusDisplay(){
     const badge=document.querySelector('#lockStatusBadge'); if(!badge){ return; }
     const lockStatus=this.getLockStatus();
+    // UI lock blur + toolbar
+    try {
+      const body=document.body;
+      const toolbar=document.getElementById('lockRequestToolbar');
+      if(lockStatus.hasLock){
+        body.classList.remove('pack-locked-out');
+        if(toolbar) toolbar.style.display='none';
+      } else if(lockStatus.is_locked_by_other || lockStatus.isLockedByOther){
+        body.classList.add('pack-locked-out');
+        if(toolbar){
+          const holder = lockStatus.holderName||lockStatus.lockedByName||'another user';
+            const hn=document.getElementById('lockHolderName'); if(hn) hn.textContent=holder;
+          toolbar.style.display='block';
+        }
+      } else { // unlocked but not owned
+        body.classList.add('pack-locked-out');
+        if(toolbar){ toolbar.style.display='block'; const hn=document.getElementById('lockHolderName'); if(hn) hn.textContent=''; }
+      }
+    } catch(e){ console.warn('Lock UI toggle failed', e); }
     if(lockStatus.hasLock){ badge.textContent='LOCKED'; badge.style.background='rgba(40,167,69,0.8)'; badge.style.borderColor='rgba(40,167,69,1)'; badge.title=`Locked by you (${lockStatus.userName||'Unknown'})`; badge.style.cursor='default'; badge.onclick=null; }
     else if(lockStatus.lockedBy){ badge.textContent='LOCKED'; badge.style.background='rgba(220,53,69,0.8)'; badge.style.borderColor='rgba(220,53,69,1)'; badge.title=`Locked by ${lockStatus.lockedByName||'another user'}`; badge.style.cursor='pointer'; badge.onclick=()=>this.requestLockAccess(); }
     else { badge.textContent='UNLOCKED'; badge.style.background='rgba(255,193,7,0.8)'; badge.style.borderColor='rgba(255,193,7,1)'; badge.title='No active lock - click to acquire'; badge.style.cursor='pointer'; badge.onclick=()=>this.requestLockAccess(); }

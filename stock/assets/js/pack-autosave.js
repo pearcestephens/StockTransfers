@@ -3,7 +3,7 @@
   if (window.PackAutoSaveLoaded) return;
   window.PackAutoSaveLoaded = true;
 
-  var SAVE_ENDPOINT = '/modules/transfers/stock/api/draft_save.php';
+  var SAVE_ENDPOINT = '/modules/transfers/stock/api/draft_save_api.php';
   var FETCH_TIMEOUT_MS = 20000;
   var MAX_BACKOFF_MS = 15000;
 
@@ -44,7 +44,8 @@
     return data;
   }
 
-  function class PackAutoSave(transferId) {
+  // Legacy constructor style (intentionally not using ES6 class for maximum compatibility)
+  function PackAutoSave(transferId) {
     this.transferId = toInt(transferId);
     this.saveDelay = 800;
     this.isDirty = false;
@@ -114,6 +115,15 @@
 
   PackAutoSave.prototype.saveNow = async function () {
     if (this.isSaving) return;
+    // Block when no lock (respect global lockStatus like modular system)
+    try {
+      var ls = window.lockStatus || {};
+      if(!ls.has_lock){
+        setInlineStatus('Lock');
+        document.getElementById('autosavePillText') && (document.getElementById('autosavePillText').textContent='LOCK');
+        return; // Do not attempt save without lock
+      }
+    } catch(_e) {}
     var draft = collectDraft(this.transferId);
     var newHash = JSON.stringify(draft.counted_qty) + '|' + (draft.notes || '');
     if (newHash === this._hash) { this.isDirty = false; try { document.dispatchEvent(new CustomEvent('packautosave:state', { detail: { state: 'noop' } })); } catch (_) {} return; }
@@ -137,6 +147,14 @@
       var json = {};
       try { json = text ? JSON.parse(text) : {}; } catch (e) {}
 
+      if (res.status === 423) {
+        setInlineStatus('Lock');
+        if (window.PackToast) window.PackToast.warning('Locked by another user – cannot save');
+        try { document.dispatchEvent(new CustomEvent('packautosave:state', { detail: { state: 'error', payload: { code: 423, message: 'Lock required' } } })); } catch (_) {}
+        this.isDirty = true; // keep dirty so it attempts again when lock acquired
+        this._err = 0;
+        return;
+      }
       if (res.ok && json && (json.success === true || json.ok === true)) {
         this.isDirty = false; this._err = 0;
         setInlineStatus('Saved');

@@ -14,13 +14,20 @@ class PackLockService
     private mysqli $db;
     private int $lockSeconds = 3600;     // hard expiry if heartbeats stop (1 hour)
     private int $heartbeatGrace = 90;    // consider stale if no heartbeat in 90s
-    private int $requestConfirmWindow = 60; // seconds requester has to accept
+    // Holder decision / request confirmation window (seconds)
+    // Default lowered from 60 to 10 to align with normalized auto-accept flow.
+    private int $requestConfirmWindow = 10; 
     private static bool $tablesInitialized = false; // prevent repeat DDL per request
     private static ?mysqli $sharedConn = null;       // cache connection for reuse
 
     public function __construct(?mysqli $db = null)
     {
         $this->db = $db ?: $this->connect();
+        // Allow override via environment PACK_LOCK_REQUEST_WINDOW (integer seconds)
+        $envOverride = getenv('PACK_LOCK_REQUEST_WINDOW');
+        if($envOverride !== false && ctype_digit($envOverride) && (int)$envOverride > 0){
+            $this->requestConfirmWindow = (int)$envOverride;
+        }
         $this->createTablesIfNotExists();
     }
 
@@ -201,7 +208,7 @@ class PackLockService
         if ($lock && (int)$lock['user_id'] === $userId) {
             return ['success'=>true,'already_holder'=>true,'lock'=>$lock];
         }
-        $expires = date('Y-m-d H:i:s', time() + $this->requestConfirmWindow);
+    $expires = date('Y-m-d H:i:s', time() + $this->requestConfirmWindow);
         $stmt = $this->db->prepare("INSERT INTO transfer_pack_lock_requests(transfer_id,user_id,expires_at,client_fingerprint) VALUES(?,?,?,?)");
         $stmt->bind_param('siss', $tid, $userId, $expires, $fingerprint);
         $stmt->execute();

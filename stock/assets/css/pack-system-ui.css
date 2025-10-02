@@ -1,0 +1,207 @@
+/*
+ * pack-system-ui.css
+ * --------------------------------------------------------------------------
+ * Scoped UI layer for the Transfers Pack experience.
+ * Purpose: Provide high-efficiency, accessible styling without touching global
+ * Bootstrap or ERP core styles. All selectors are namespaced under
+ * .transfer-pack or .transfer-pack-* to avoid bleed.
+ * Size target: < 5KB (keep lean). Dark-mode & RTL aware hooks included.
+ * Author: Automated Front-End Engineer
+ * Last Modified: 2025-10-01
+ */
+
+:root {
+  --tp-gap-xs: 4px;
+  --tp-gap-sm: 8px;
+  --tp-gap: 12px;
+  --tp-gap-lg: 20px;
+  --tp-radius: 4px;
+  --tp-border: #dee2e6;
+  --tp-bg-soft: #f8f9fa;
+  --tp-bg-accent: #eef6ff;
+  --tp-bg-danger-soft: #fff5f5;
+  --tp-bg-success-soft: #f3fdf6;
+  --tp-text-muted: #6c757d;
+  --tp-text-soft: #495057;
+  --tp-focus-ring: 0 0 0 2px rgba(0,123,255,.3);
+}
+
+/* Root layout wrapper (optional) */
+.transfer-pack {
+  position: relative;
+  display: block;
+}
+
+/* Status / utility bar (autosave + lock + actions) */
+.transfer-pack__status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tp-gap-sm);
+  padding: var(--tp-gap-sm) var(--tp-gap);
+  background: var(--tp-bg-soft);
+  border: 1px solid var(--tp-border);
+  border-radius: var(--tp-radius);
+  margin-bottom: var(--tp-gap);
+}
+.transfer-pack__status-bar .status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  font-weight: 500;
+  color: var(--tp-text-soft);
+}
+
+/* Autosave pill */
+.autosave-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  background: #6c757d;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 40px;
+  font-weight: 600;
+  transition: background-color .25s;
+  user-select: none;
+}
+.autosave-pill.status-saving { background:#ffc107; color:#212529; }
+.autosave-pill.status-saved { background:#28a745; }
+.autosave-pill.status-error { background:#dc3545; }
+
+/* Lock badge refinement (assuming existing #lockStatusBadge) */
+#lockStatusBadge.transfer-pack__lock-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  letter-spacing: .75px;
+  border-radius: 3px;
+  transition: background-color .25s,border-color .25s;
+}
+#lockStatusBadge.transfer-pack__lock-badge:focus { outline: none; box-shadow: var(--tp-focus-ring); }
+
+/* Table zone */
+.transfer-pack-table-wrapper {
+  position: relative;
+  border: 1px solid var(--tp-border);
+  border-radius: var(--tp-radius);
+  background: #fff;
+  overflow: hidden;
+}
+.transfer-pack-table-wrapper--scroll {
+  max-height: 60vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.transfer-pack-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+}
+.transfer-pack-table thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+  box-shadow: 0 1px 0 0 var(--tp-border);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 6px 8px;
+}
+.transfer-pack-table tbody td {
+  vertical-align: middle;
+  padding: 6px 8px;
+  border-top: 1px solid var(--tp-border);
+}
+.transfer-pack-table tbody tr:hover td {
+  background: var(--tp-bg-accent);
+}
+
+/* Quantity state coloring (keeping contrast high) */
+.transfer-pack-table tr.qty-match td { background: var(--tp-bg-success-soft); }
+.transfer-pack-table tr.qty-mismatch td { background: var(--tp-bg-danger-soft); }
+.transfer-pack-table tr.qty-neutral td { background: #fff; }
+
+/* Footer total row */
+.transfer-pack-table tfoot td {
+  font-weight: 600;
+  background: var(--tp-bg-soft);
+  border-top: 2px solid var(--tp-border);
+}
+
+/* Inline quantity input refinements */
+.transfer-pack__qty-input input.qty-input,
+.transfer-pack-table input.qty-input {
+  width: 48px; /* narrower per request */
+  text-align: center;
+  padding: 2px 4px;
+  font-weight: 600; /* slightly bolder for readability */
+  font-size: 0.85rem; /* larger to match other numeric cells */
+  line-height: 1.1;
+}
+.transfer-pack-table input.qty-input:focus { box-shadow: var(--tp-focus-ring); outline: none; }
+
+/* Product search modal results */
+.transfer-pack-search-result {
+  display:flex;
+  gap: var(--tp-gap);
+  padding: var(--tp-gap) var(--tp-gap);
+  border-bottom: 1px solid var(--tp-border);
+  align-items: center;
+  font-size: 0.78rem;
+}
+.transfer-pack-search-result:hover { background: var(--tp-bg-soft); }
+.transfer-pack-search-result__img { width:46px; height:46px; border-radius:4px; object-fit:cover; background:#e9ecef; display:flex; align-items:center; justify-content:center; font-size:.9rem; color:#adb5bd; }
+.transfer-pack-search-result__meta { flex:1 1 auto; min-width:0; }
+.transfer-pack-search-result__meta h6 { font-size:0.72rem; margin:0 0 2px; font-weight:600; letter-spacing:.4px; }
+.transfer-pack-search-result__stats { display:flex; gap:6px; flex-wrap:wrap; }
+.transfer-pack-search-result__stat { background:#e9ecef; padding:2px 6px; border-radius:3px; font-size:.62rem; font-weight:600; letter-spacing:.5px; }
+.transfer-pack-search-result__actions { display:flex; gap:6px; align-items:center; }
+
+/* Utility helpers (scoped) */
+.transfer-pack .u-soft-muted { color: var(--tp-text-muted); font-size: .7rem; letter-spacing:.3px; }
+.transfer-pack .u-inline-badge { display:inline-block; padding:2px 6px; font-size:.6rem; font-weight:600; background:#e9ecef; border-radius:3px; }
+.transfer-pack .u-flex { display:flex; }
+.transfer-pack .u-flex-center { display:flex; align-items:center; justify-content:center; }
+.transfer-pack .u-gap-sm { gap: var(--tp-gap-sm); }
+.transfer-pack .u-gap { gap: var(--tp-gap); }
+.transfer-pack .u-w-100 { width:100%; }
+.transfer-pack .u-truncate { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+  .transfer-pack__status-bar { flex-direction: row; }
+  .transfer-pack-table thead th, .transfer-pack-table tbody td { padding: 6px 6px; }
+  .transfer-pack-search-result { flex-direction: row; }
+}
+@media (max-width: 640px) {
+  .transfer-pack__status-bar { flex-direction: column; align-items: stretch; }
+  .transfer-pack-table-wrapper--scroll { max-height: 50vh; }
+  .transfer-pack-search-result { flex-direction: column; align-items:flex-start; }
+  .transfer-pack-search-result__actions { width:100%; justify-content:flex-start; }
+}
+
+/* Dark mode hook (optional future toggle) */
+@media (prefers-color-scheme: dark) {
+  .transfer-pack__status-bar { background:#1f2428; border-color:#2d3339; }
+  .transfer-pack-table tbody tr:hover td { background:#26313a; }
+  .transfer-pack-table tr.qty-match td { background:#1d3a28; }
+  .transfer-pack-table tr.qty-mismatch td { background:#3a2222; }
+  .transfer-pack-table tr.qty-neutral td { background:#1e2226; }
+  .transfer-pack-table thead th { background:#1e2226; }
+  .transfer-pack-table tfoot td { background:#1e2226; }
+  .transfer-pack-search-result:hover { background:#262b30; }
+}
+
+/* RTL readiness */
+html[dir="rtl"] .transfer-pack__status-bar { direction: rtl; }
+html[dir="rtl"] .transfer-pack-search-result { direction: rtl; }

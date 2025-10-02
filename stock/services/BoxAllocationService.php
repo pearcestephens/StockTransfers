@@ -22,6 +22,10 @@ class BoxAllocationService {
     private array $allocation_rules;
     private array $container_limits;
     private float $safety_margin;
+    // Dynamic carrier/container pricing matrix (pricing_matrix view)
+    private array $pricing_matrix = [];
+    // Normalized container templates sourced from pricing_matrix (code => template)
+    private array $dynamic_containers = [];
     
     // Product compatibility rules
     private array $incompatible_categories = [
@@ -44,6 +48,7 @@ class BoxAllocationService {
         $this->safety_margin = $options['safety_margin'] ?? 0.85; // 15% safety buffer
         $this->loadAllocationRules();
         $this->loadContainerLimits();
+        $this->loadPricingMatrix(); // build dynamic_containers from live courier pricing
     }
     
     /**
@@ -241,7 +246,7 @@ class BoxAllocationService {
             
             // If not placed, create new box
             if (!$placed) {
-                $new_box = $this->createNewBox(count($boxes) + 1);
+                $new_box = $this->createNewBoxForItem($item, count($boxes) + 1);
                 $this->placeItemInBox($item, $new_box);
                 $boxes[] = $new_box;
                 $strategy_notes[] = "Created Box " . (count($boxes)) . " for " . $item['product_name'] . 
@@ -355,6 +360,106 @@ class BoxAllocationService {
             'suggested_carrier' => null,
             'estimated_cost' => null
         ];
+    }
+
+    /**
+     * Create a new box tailored for the first item using courier pricing containers when available.
+     * Falls back to static template logic if no dynamic fit is found.
+     */
+    private function createNewBoxForItem(array $item, int $box_number): array {
+        $chosen = $this->chooseContainerForItem($item);
+        if ($chosen === null) {
+            return $this->createNewBox($box_number); // fallback to legacy medium template
+        }
+        $volume_cm3 = ($chosen['length_mm'] * $chosen['width_mm'] * $chosen['height_mm']) / 1000; // internal volume baseline (cm3)
+        return [
+            'box_number' => $box_number,
+            'name' => ($chosen['container_name'] ?? $chosen['code'] ?? 'Box') . " #{$box_number}",
+            'length_mm' => (int)$chosen['length_mm'],
+            'width_mm' => (int)$chosen['width_mm'],
+            'height_mm' => (int)$chosen['height_mm'],
+            'max_weight_g' => (int)$chosen['max_weight_grams'],
+            'current_weight_g' => 0,
+            'current_volume_cm3' => 0,
+            'item_count' => 0,
+            'items' => [],
+            'products' => [],
+            'contains_nicotine' => false,
+            'contains_non_nicotine' => false,
+            'contains_fragile' => false,
+            'suggested_carrier' => $chosen['carrier_code'] ?? null,
+            'estimated_cost' => $chosen['price'] ?? null,
+            'currency' => $chosen['currency'] ?? null,
+            'pricing_source' => 'pricing_matrix',
+            'template' => $chosen['code'] ?? 'dynamic'
+        ];
+    }
+
+    /**
+     * Choose the most cost-effective container for an item honoring weight & rough volume constraints.
+     * Strategy: smallest/cheapest container whose max_weight >= item weight * safety_margin_factor.
+     * Volume is approximated via item['unit_volume_cm3']; if absent we skip volume filtering.
+     */
+    private function chooseContainerForItem(array $item): ?array {
+        if (empty($this->dynamic_containers)) return null;
+        $unitWeight = (float)($item['unit_weight_g'] ?? 0);
+        $unitVolume = (float)($item['unit_volume_cm3'] ?? 0);
+        $requiredWeight = max(1, (int)ceil($unitWeight));
+        $requiredVolume = $unitVolume > 0 ? $unitVolume : null;
+        $best = null;
+        foreach ($this->dynamic_containers as $code => $c) {
+            $cap = (int)($c['max_weight_grams'] ?? 0);
+            if ($cap > 0 && $requiredWeight > $cap) continue; // too small
+            if ($requiredVolume !== null) {
+                $cVol = ($c['length_mm'] * $c['width_mm'] * $c['height_mm']) / 1000; // cm3
+                if ($requiredVolume > $cVol) continue;
+            }
+            if ($best === null) { $best = $c; continue; }
+            // Prefer lower price, then lower max weight (tighter fit), then smaller volume
+            $bestPrice = (float)($best['price'] ?? PHP_FLOAT_MAX);
+            $curPrice = (float)($c['price'] ?? PHP_FLOAT_MAX);
+            if ($curPrice < $bestPrice) { $best = $c; continue; }
+            if ($curPrice === $bestPrice) {
+                $bestCap = (int)($best['max_weight_grams'] ?? PHP_INT_MAX);
+                if ($cap < $bestCap) { $best = $c; continue; }
+            }
+        }
+        return $best;
+    }
+
+    /**
+     * Load active pricing_matrix view (courier + container pricing) and normalize into dynamic containers.
+     * pricing_matrix columns: carrier_code, container_code, container_name, length_mm,width_mm,height_mm,max_weight_grams,price,currency,effective_from,effective_to
+     */
+    private function loadPricingMatrix(): void {
+        try {
+            $sql = "SELECT carrier_code, container_code, container_name, length_mm, width_mm, height_mm, max_weight_grams, price, currency FROM pricing_matrix WHERE (effective_from IS NULL OR effective_from <= CURRENT_DATE()) AND (effective_to IS NULL OR effective_to >= CURRENT_DATE()) ORDER BY price ASC, max_weight_grams ASC";
+            $stmt = $this->pdo->query($sql);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $this->pricing_matrix = $rows;
+            foreach ($rows as $r) {
+                $code = (string)($r['container_code'] ?? '');
+                if ($code === '') continue;
+                // First occurrence (cheapest due to ORDER BY) wins to keep minimal map
+                if (!isset($this->dynamic_containers[$code])) {
+                    $this->dynamic_containers[$code] = [
+                        'code' => $code,
+                        'container_name' => $r['container_name'] ?? $code,
+                        'length_mm' => (int)($r['length_mm'] ?? 0),
+                        'width_mm' => (int)($r['width_mm'] ?? 0),
+                        'height_mm' => (int)($r['height_mm'] ?? 0),
+                        'max_weight_grams' => (int)($r['max_weight_grams'] ?? 0),
+                        'price' => $r['price'] !== null ? (float)$r['price'] : null,
+                        'currency' => $r['currency'] ?? 'NZD',
+                        'carrier_code' => $r['carrier_code'] ?? null,
+                        'source' => 'pricing_matrix'
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('loadPricingMatrix failed: ' . $e->getMessage());
+            // Non-fatal; system will fallback to static templates
+        }
     }
     
     /**
