@@ -1,0 +1,4 @@
+/* Backup of deleted corrupted legacy client: assets/js/pack-lock.js
+   This file was bloated/duplicated (~1900 lines) and replaced by simple-lock.js + lock-ui.js.
+   Only a truncated header is stored to avoid reintroducing bad patterns. */
+// (Truncated) class PackLock { constructor(transferId,userId){ /* legacy */ } }

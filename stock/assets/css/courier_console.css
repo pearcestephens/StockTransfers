@@ -1,0 +1,7 @@
+
+#courier-console .card-header{background:linear-gradient(90deg,#0b132b,#1c2541);color:#fff}
+#courier-console .btn-outline-light.active{background:#ffc107;color:#111;border-color:#ffc107}
+#courier-console .dim-input{width:64px} .kg-input{width:90px}
+#courier-console table.table td,#courier-console table.table th{vertical-align:middle}
+#courier-console .table thead th{background:#f6f7fb}
+.modal-dialog-slideout{transform:translate(0,0)}

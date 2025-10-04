@@ -308,8 +308,11 @@ if (!function_exists('tfx_product_tag')) {
   </script>
 
   <!-- External JavaScript Modules (Optimized Loading) -->
-  <script src="/modules/transfers/stock/assets/js/pack-lock.js?v=<?= (int)$assetVer ?>"></script>
-  <script src="/modules/transfers/stock/assets/js/pack-unified.js?v=<?= (int)$assetVer ?>" defer></script>
+  <!-- Updated to modular lock system -->
+  <script src="/modules/transfers/stock/assets/js/simple-lock.js?v=<?= (int)$assetVer ?>" defer></script>
+  <script src="/modules/transfers/stock/assets/js/lock-ui.js?v=<?= (int)$assetVer ?>" defer></script>
+  <script src="/modules/transfers/stock/assets/js/lock-diagnostics.js?v=<?= (int)$assetVer ?>" defer></script>
+  <script src="/modules/transfers/stock/assets/js/lock-selftest.js?v=<?= (int)$assetVer ?>" defer></script>
   
   <?php if (!isset($skipBootstrap)): ?>
   <!-- Bootstrap JS (if not already included) -->

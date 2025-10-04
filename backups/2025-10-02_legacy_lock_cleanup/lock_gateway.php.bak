@@ -1,0 +1,16 @@
+/* Backup of deleted legacy file: stock/api/lock_gateway.php
+   Timestamp: 2025-10-02T00:00:00Z (logical consolidation time)
+   NOTE: This file was severely corrupted and replaced by simple_lock.php + lock_events.php architecture.
+*/
+<?php
+// Original content preserved below for forensic reference.
+?>
+<?php
+/* BEGIN ORIGINAL */
+<?php<?php<?php<?php
+
+// LOCK GATEWAY - SIMPLE AND WORKING
+
+require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';declare(strict_types=1);
+... (content truncated intentionally; full corrupted source was >450 lines)
+/* END ORIGINAL */

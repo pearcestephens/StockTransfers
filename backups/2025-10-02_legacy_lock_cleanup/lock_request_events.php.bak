@@ -1,0 +1,7 @@
+/* Backup of deleted stub file: stock/api/lock_request_events.php
+   Status prior to deletion: emergency stub returning empty events.
+*/
+<?php
+declare(strict_types=1);
+header('Content-Type: application/json');
+echo json_encode(['status'=>'removed','reason'=>'Replaced by consolidated simple lock SSE + REST system']);

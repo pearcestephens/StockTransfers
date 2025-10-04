@@ -5,8 +5,8 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
 header('Content-Type: application/json; charset=utf-8');
 
 use Modules\Transfers\Stock\Services\TransfersService;
-use Modules\Transfers\Stock\Services\PackLockService;
-use Modules\Transfers\Stock\Services\LockAuditService;
+// Legacy PackLockService removed in favor of simple_locks guard
+require_once __DIR__.'/_lib/simple_lock_guard.php';
 
 // Unified response helpers --------------------------------------------------
 function rsp(array $env, int $code=200): void { http_response_code($code); echo json_encode($env, JSON_UNESCAPED_SLASHES); exit; }
@@ -32,21 +32,8 @@ if(!$payload) $payload = $_POST; // fallback legacy
 $transferId = (int)($payload['transfer_id'] ?? 0);
 if($transferId<=0){ rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'MISSING_TRANSFER','message'=>'transfer_id required']],400); }
 
-// Acquire / verify lock -----------------------------------------------------
-$lockSvc = new PackLockService();
-$lock = $lockSvc->getLock($transferId);
-if(!$lock || (int)$lock['user_id']!==$uid){
-  // 423 Locked semantics
-  rsp([
-    'ok'=>false,
-    'request_id'=>rid(),
-    'error'=>[
-      'code'=>'LOCK_REQUIRED',
-      'message'=>'Obtain exclusive lock before saving pack',
-      'details'=>['held_by'=>$lock['user_id'] ?? null]
-    ]
-  ],423);
-}
+// Acquire / verify lock (simple_locks server-side enforcement) -------------
+$lockRow = require_lock_or_423('transfer:'.$transferId, $uid, $payload['lock_token'] ?? null);
 
 // Build domain data ---------------------------------------------------------
 $data = [
@@ -68,16 +55,11 @@ try {
   rsp(['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'EXCEPTION','message'=>$e->getMessage()]],500);
 }
 
-$audit = new LockAuditService();
 if(!($res['success']??false)){
-  $audit->lockAcquire($transferId,$uid,false); // annotate failed attempt
-  // Provide unified envelope AND legacy (feature flag via ?legacy=1)
   $env = ['ok'=>false,'request_id'=>rid(),'error'=>['code'=>'SAVE_FAILED','message'=>$res['error'] ?? 'Save failed']];
   if(isset($_GET['legacy']) && $_GET['legacy']==='1'){ $legacy=$res; echo json_encode($legacy, JSON_UNESCAPED_SLASHES); exit; }
   rsp($env,200);
 }
-
-$audit->lockAcquire($transferId,$uid,true); // annotate success
 
 $responseData = [
   'transfer_id'=>$transferId,
@@ -91,5 +73,5 @@ if(isset($_GET['legacy']) && $_GET['legacy']==='1'){
   echo json_encode($res, JSON_UNESCAPED_SLASHES); exit;
 }
 
-rsp(['ok'=>true,'request_id'=>rid(),'data'=>$responseData]);
+rsp(['ok'=>true,'request_id'=>rid(),'data'=>$responseData,'lock'=>['resource'=>$lockRow['resource_key'],'token'=>$lockRow['token']]]);
 ?>

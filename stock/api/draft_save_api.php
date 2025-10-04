@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
-require_once __DIR__ . '/_lib/ServerLockGuard.php';
+require_once __DIR__ . '/_lib/simple_lock_guard.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -21,8 +21,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 }
 
 try {
-    $guard = ServerLockGuard::getInstance();
-    $userId = $guard->validateAuthOrDie();
+    if(!isset($_SESSION['userID'])){ http_response_code(401); echo json_encode(['success'=>false,'error'=>['code'=>'UNAUTH','message'=>'Auth required']]); exit; }
+    $userId = (int)$_SESSION['userID'];
 
     $DEBUG_DRAFT = (getenv('DEBUG_DRAFT_SAVE') === '1');
     $stage = 'init';
@@ -46,8 +46,9 @@ try {
     }
 
     $stage = 'lock_validation';
-    $transferId = $guard->extractTransferIdOrDie($data);
-    $guard->validateLockOrDie($transferId, $userId, 'draft save');
+    $transferId = (int)($data['transfer_id'] ?? 0);
+    if($transferId<=0){ http_response_code(400); echo json_encode(['success'=>false,'error'=>['code'=>'MISSING_TRANSFER','message'=>'transfer_id required']]); exit; }
+    require_lock_or_423('transfer:'.$transferId, $userId, $data['lock_token'] ?? null);
 
     $stage = 'payload_normalize';
     $countedQty = $data['counted_qty'] ?? [];

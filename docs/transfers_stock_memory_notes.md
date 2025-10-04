@@ -1,4 +1,6 @@
-# Transfers Stock Module – Memory Notes
+# (Consolidated) Transfers Stock Module – Memory Notes
+
+> Rapid crib content integrated into `TRANSFERS_MODULE_ARCHITECTURE.md` (boot payload, heuristics, pipeline overlay). Maintain ephemeral scratch items here only if not yet promoted to formal docs.
 
 > Fast-reference crib sheet for future work on Pack & Send.
 

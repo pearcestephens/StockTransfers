@@ -16,7 +16,7 @@ class PackLockService
     private int $heartbeatGrace = 90;    // consider stale if no heartbeat in 90s
     // Holder decision / request confirmation window (seconds)
     // Default lowered from 60 to 10 to align with normalized auto-accept flow.
-    private int $requestConfirmWindow = 10; 
+    private int $requestConfirmWindow = 60; 
     private static bool $tablesInitialized = false; // prevent repeat DDL per request
     private static ?mysqli $sharedConn = null;       // cache connection for reuse
 
@@ -131,7 +131,7 @@ class PackLockService
     public function getLock(string|int $transferId): ?array
     {
         $tid = (string)$transferId;
-        $stmt = $this->db->prepare("SELECT transfer_id, user_id, acquired_at, expires_at, heartbeat_at FROM transfer_pack_locks WHERE transfer_id=? LIMIT 1");
+        $stmt = $this->db->prepare("SELECT transfer_id, user_id, acquired_at, expires_at, heartbeat_at, client_fingerprint FROM transfer_pack_locks WHERE transfer_id=? LIMIT 1");
         $stmt->bind_param('s', $tid);
         $stmt->execute();
         $res = $stmt->get_result()->fetch_assoc();
@@ -150,23 +150,49 @@ class PackLockService
     {
         $tid = (string)$transferId;
         $existing = $this->getLock($tid);
+        // Another user owns it
         if ($existing && (int)$existing['user_id'] !== $userId) {
             return ['success'=>false,'conflict'=>true,'holder'=>$existing];
         }
-        $expires = date('Y-m-d H:i:s', time() + $this->lockSeconds);
-        if ($existing) {
-            $stmt = $this->db->prepare("UPDATE transfer_pack_locks SET user_id=?, acquired_at=acquired_at, expires_at=?, heartbeat_at=? WHERE transfer_id=?");
+        $enforce = getenv('PACK_SINGLE_TAB_ENFORCE');
+        $enforce = $enforce === false ? true : (bool)$enforce; // default ON
+        if ($existing && (int)$existing['user_id'] === $userId) {
+            $currentFp = (string)($existing['client_fingerprint'] ?? '');
+            if ($enforce) {
+                if ($currentFp !== '' && $fingerprint !== null && $fingerprint !== $currentFp) {
+                    // same user different tab/browser
+                    return [
+                        'success' => false,
+                        'conflict' => true,
+                        'same_user_other_tab' => true,
+                        'holder' => $existing
+                    ];
+                }
+                // legacy row without fingerprint gets seeded now
+                if ($currentFp === '' && $fingerprint !== null) {
+                    $stmt = $this->db->prepare("UPDATE transfer_pack_locks SET client_fingerprint=? WHERE transfer_id=?");
+                    $stmt->bind_param('ss', $fingerprint, $tid);
+                    $stmt->execute();
+                    $stmt->close();
+                    $existing = $this->getLock($tid);
+                }
+            }
+            // extend expiry / heartbeat
+            $expires = date('Y-m-d H:i:s', time() + $this->lockSeconds);
+            $stmt = $this->db->prepare("UPDATE transfer_pack_locks SET expires_at=?, heartbeat_at=? WHERE transfer_id=?");
             $now = $this->now();
-            $stmt->bind_param('isss', $userId, $expires, $now, $tid);
+            $stmt->bind_param('sss', $expires, $now, $tid);
             $stmt->execute();
             $stmt->close();
-        } else {
-            $stmt = $this->db->prepare("REPLACE INTO transfer_pack_locks(transfer_id,user_id,acquired_at,expires_at,heartbeat_at,client_fingerprint) VALUES(?,?,NOW(),?,?,?)");
-            $now = $this->now();
-            $stmt->bind_param('sisss', $tid, $userId, $expires, $now, $fingerprint);
-            $stmt->execute();
-            $stmt->close();
+            return ['success'=>true,'lock'=>$this->getLock($tid)];
         }
+        // Fresh acquire
+        $expires = date('Y-m-d H:i:s', time() + $this->lockSeconds);
+        $stmt = $this->db->prepare("REPLACE INTO transfer_pack_locks(transfer_id,user_id,acquired_at,expires_at,heartbeat_at,client_fingerprint) VALUES(?,?,NOW(),?,?,?)");
+        $now = $this->now();
+        $stmt->bind_param('sisss', $tid, $userId, $expires, $now, $fingerprint);
+        $stmt->execute();
+        $stmt->close();
         return ['success'=>true,'lock'=>$this->getLock($tid)];
     }
 
@@ -265,15 +291,36 @@ class PackLockService
     /** Cleanup expired lock requests and stale locks. */
     public function cleanup(): void
     {
-        // Audit expiries before deletion
-        $expired = $this->db->query("SELECT id, transfer_id, user_id FROM transfer_pack_lock_requests WHERE status='pending' AND expires_at < NOW()");
-        if($expired && $expired->num_rows){
-            // Lazy create audit service only if needed
-            try { $audit = new LockAuditService(); } catch(\Throwable $e){ $audit=null; }
-            while($row = $expired->fetch_assoc()){
-                if(isset($audit)) $audit->requestExpire((int)$row['transfer_id'], (int)$row['id'], (int)$row['user_id']);
+        // Auto-grant logic: if a pending request expired without holder response and holder lock still exists, transfer ownership.
+        $now = time();
+        // Fetch expired pending requests plus current lock state
+        $expiredRes = $this->db->query("SELECT r.id, r.transfer_id, r.user_id FROM transfer_pack_lock_requests r JOIN transfer_pack_locks l ON l.transfer_id = r.transfer_id WHERE r.status='pending' AND r.expires_at < NOW()");
+        if ($expiredRes && $expiredRes->num_rows) {
+            while ($row = $expiredRes->fetch_assoc()) {
+                $tid = (string)$row['transfer_id'];
+                $lock = $this->getLock($tid);
+                if ($lock) {
+                    // Transfer ownership automatically (auto-accept)
+                    $expires = date('Y-m-d H:i:s', $now + $this->lockSeconds);
+                    $stmt = $this->db->prepare("UPDATE transfer_pack_locks SET user_id=?, acquired_at=NOW(), expires_at=?, heartbeat_at=NOW() WHERE transfer_id=?");
+                    $stmt->bind_param('iss', $row['user_id'], $expires, $tid);
+                    $stmt->execute();
+                    $stmt->close();
+                    // Mark request accepted
+                    $stmt = $this->db->prepare("UPDATE transfer_pack_lock_requests SET status='accepted', responded_at=NOW() WHERE id=?");
+                    $stmt->bind_param('i', $row['id']);
+                    $stmt->execute();
+                    $stmt->close();
+                } else {
+                    // No active lock anymore; just expire
+                    $stmt = $this->db->prepare("UPDATE transfer_pack_lock_requests SET status='expired', responded_at=NOW() WHERE id=?");
+                    $stmt->bind_param('i', $row['id']);
+                    $stmt->execute();
+                    $stmt->close();
+                }
             }
         }
+        // Clean up any remaining expired requests
         $this->db->query("DELETE FROM transfer_pack_lock_requests WHERE status='pending' AND expires_at < NOW()");
         $this->db->query("DELETE FROM transfer_pack_locks WHERE expires_at < NOW() OR heartbeat_at < DATE_SUB(NOW(), INTERVAL {$this->heartbeatGrace} SECOND)");
     }

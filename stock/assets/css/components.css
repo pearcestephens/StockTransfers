@@ -1,0 +1,540 @@
+/**
+ * Components CSS - Shared component styles
+ * 
+ * Auto-loaded for all transfer pages
+ */
+
+/* ====== Autosave Indicator ====== */
+.autosave-pill {
+    transition: all 0.3s ease;
+}
+
+.autosave-pill.status-idle {
+    background-color: #6c757d !important;
+}
+
+.autosave-pill.status-saving {
+    background-color: #007bff !important;
+}
+
+.autosave-pill.status-saved {
+    background-color: #28a745 !important;
+}
+
+.autosave-pill.status-error {
+    background-color: #dc3545 !important;
+}
+
+.pill-icon {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ====== Lock Status Bar ====== */
+.lock-request-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+    transform: translateY(-100%);
+    transition: transform 0.3s ease;
+}
+
+.lock-request-bar.visible {
+    transform: translateY(0);
+}
+
+.lock-request-bar.lock-same-owner {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.lock-bar-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.lock-icon {
+    font-size: 20px;
+    margin-right: 15px;
+}
+
+.lock-info {
+    flex: 1;
+}
+
+.status-label {
+    font-weight: 600;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+.countdown {
+    font-weight: 700;
+    font-size: 16px;
+    padding: 2px 8px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 4px;
+}
+
+.spectator-note-wrap {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+/* ====== Transfer Header ====== */
+.card-header.bg-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+}
+
+#lockStatusBadge {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+}
+
+#lockStatusBadge.pulse {
+    animation: badgePulse 2s infinite;
+}
+
+@keyframes badgePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* ====== Items Table ====== */
+#transferItemsTable {
+    font-size: 0.9rem;
+}
+
+#transferItemsTable thead th {
+    position: sticky;
+    top: 0;
+    background: #f8f9fa;
+    z-index: 10;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.pack-item-row {
+    transition: background-color 0.2s ease;
+}
+
+.pack-item-row:hover {
+    background-color: #f8f9fa !important;
+}
+
+.product-thumb {
+    transition: all 0.3s ease;
+}
+
+.product-thumb:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.qty-input {
+    max-width: 80px;
+    font-weight: 600;
+}
+
+.qty-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.qty-input.is-invalid {
+    border-color: #dc3545;
+}
+
+.qty-input.is-warning {
+    border-color: #ffc107;
+}
+
+.qty-input.is-valid {
+    border-color: #28a745;
+}
+
+.mono {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+/* ====== Metrics Card ====== */
+.metric {
+    padding: 15px 0;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 8px;
+}
+
+.metric-label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ====== Product Image Modal ====== */
+#productImageModal .modal-body {
+    padding: 0;
+    background: #000;
+}
+
+#productImageModalImg {
+    max-width: 100%;
+    max-height: 70vh;
+    margin: 0 auto;
+}
+
+/* ====== Diagnostic Modal ====== */
+#lockDiagModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#lockDiagContent {
+    background: white;
+    border-radius: 8px;
+    max-width: 800px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+#lockDiagContent h3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.diag-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.diag-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.btn-copy {
+    background: #007bff;
+    color: white;
+}
+
+.btn-refresh {
+    background: #28a745;
+    color: white;
+}
+
+.btn-close {
+    background: #6c757d;
+    color: white;
+}
+
+.diag-actions button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* ====== Breadcrumbs ====== */
+.breadcrumb {
+    background: #f8f9fa;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+}
+
+.breadcrumb-item + .breadcrumb-item::before {
+    content: "›";
+    font-size: 1.2em;
+    color: #6c757d;
+}
+
+.breadcrumb-item.active {
+    font-weight: 600;
+    color: #495057;
+}
+
+/* ====== Responsive Adjustments ====== */
+@media (max-width: 768px) {
+    .lock-bar-content {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .lock-actions {
+        margin-top: 10px;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+    }
+    
+    #transferItemsTable {
+        font-size: 0.8rem;
+    }
+    
+    .product-thumb {
+        width: 35px !important;
+        height: 35px !important;
+    }
+}
+
+/* ====== Utility Classes ====== */
+.text-nowrap {
+    white-space: nowrap;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.hover-shadow:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* ====== Advanced Lock System Styles ====== */
+
+/* Enhanced Lock Bar Styles */
+.lock-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    color: white;
+    padding: 12px 20px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.4);
+    border-bottom: 3px solid transparent;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    animation: slideDown 0.4s ease-out;
+}
+
+@keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* Same User Multiple Tabs - Red Bar */
+.lock-bar-red {
+    background: linear-gradient(135deg, #dc3545, #bd2130);
+    border-bottom-color: #a71e2a;
+}
+
+/* Different User Lock - Purple Bar */
+.lock-bar-purple {
+    background: linear-gradient(135deg, #6f42c1, #5a2d91);
+    border-bottom-color: #4e2679;
+}
+
+/* Success Banner - Green */
+.lock-bar-success {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+    border-bottom-color: #196f2a;
+}
+
+/* Warning Banner - Orange */
+.lock-bar-warning {
+    background: linear-gradient(135deg, #fd7e14, #e55a00);
+    border-bottom-color: #cc4e00;
+}
+
+.lock-bar .lock-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    animation: lockPulse 2s infinite;
+}
+
+@keyframes lockPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.lock-bar .lock-info .status-label {
+    font-weight: 700;
+    font-size: 1.1rem;
+    display: block;
+    margin-bottom: 4px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.lock-message {
+    font-size: 0.9rem;
+    opacity: 0.95;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.countdown-timer {
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: block;
+    margin-top: 4px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.countdown-timer strong {
+    font-size: 1rem;
+    color: #ffeb3b;
+    text-shadow: 0 0 4px rgba(255,235,59,0.5);
+}
+
+.lock-actions .btn {
+    font-weight: 600;
+    border: 2px solid rgba(255,255,255,0.3);
+    transition: all 0.2s ease;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.lock-actions .btn:hover {
+    border-color: rgba(255,255,255,0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.spectator-note {
+    text-align: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    font-size: 0.85rem;
+    opacity: 0.9;
+    font-style: italic;
+}
+
+.spectator-note i {
+    margin-right: 6px;
+}
+
+/* Content Blur Effects */
+.lock-content-disabled {
+    pointer-events: none;
+    filter: blur(2px);
+    opacity: 0.6;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.lock-content-spectator {
+    pointer-events: none;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.lock-content-spectator::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(108, 117, 125, 0.1);
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* Input Field States */
+input.lock-disabled,
+select.lock-disabled,
+textarea.lock-disabled,
+button.lock-disabled {
+    background-color: #f8f9fa !important;
+    color: #6c757d !important;
+    cursor: not-allowed !important;
+    opacity: 0.7 !important;
+    border-color: #dee2e6 !important;
+    pointer-events: none !important;
+}
+
+/* Lock Status Indicators */
+.lock-status-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 8888;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.lock-status-indicator.locked {
+    background: rgba(220, 53, 69, 0.9);
+}
+
+.lock-status-indicator.spectator {
+    background: rgba(111, 66, 193, 0.9);
+}
+
+.lock-status-indicator.owner {
+    background: rgba(40, 167, 69, 0.9);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .lock-bar {
+        padding: 10px 15px;
+    }
+    
+    .lock-bar-content {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+    
+    .lock-actions {
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .lock-bar .lock-info .status-label {
+        font-size: 1rem;
+    }
+    
+    .lock-message {
+        font-size: 0.85rem;
+    }
+}

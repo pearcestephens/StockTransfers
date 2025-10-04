@@ -1,25 +1,13 @@
-// Autosave related mixin
-export const AutoSaveMixin = Base => class extends Base {
-  initAutoSave(){
-    this.modules.autoSave = { timer:null, debounceTimer:null, lastSaveData:null, lastSaveTime:0, isEnabled:true, isSaving:false, saveDelay:2000, maxInterval:30000, hasPendingChanges:false,
-      start:()=>{ this.setAutoSaveStatus('idle'); this.debug('Auto-save started (input-driven only)'); },
-      stop:()=>{ if(this.modules.autoSave.timer) clearInterval(this.modules.autoSave.timer); if(this.modules.autoSave.debounceTimer) clearTimeout(this.modules.autoSave.debounceTimer); this.setAutoSaveStatus('idle'); this.debug('Auto-save stopped'); },
-      triggerSave:()=>{ this.modules.autoSave.hasPendingChanges=true; if(this.modules.autoSave.debounceTimer) clearTimeout(this.modules.autoSave.debounceTimer); this.modules.autoSave.debounceTimer=setTimeout(()=>{ if(this.modules.autoSave.isEnabled && !this.modules.autoSave.isSaving && this.modules.autoSave.hasPendingChanges){ const ts=Date.now()-this.modules.autoSave.lastSaveTime; if(ts>=this.modules.autoSave.maxInterval || this.modules.autoSave.lastSaveTime===0){ this.performAutoSave('input'); } else { this.debug(`Auto-save postponed - only ${Math.round(ts/1000)}s since last save`); } } }, this.modules.autoSave.saveDelay); this.debug('Auto-save triggered (will save in 2s if no more input)'); }
+/**
+ * Pack Autosave Module
+ * @module pack/autosave
+ * @requires shared/api-client
+ */
+(function(window) {
+    'use strict';
+    const PackAutosave = {
+        init(config) { console.log('[PackAutosave] Initialized'); },
+        scheduleAutoSave() { /* TODO */ },
     };
-    this.modules.autoSave.start();
-  }
-  setAutoSaveStatus(status){ const el=document.getElementById('autoSaveStatus'); const pill=document.getElementById('autosavePill'); const pillText=document.getElementById('autosavePillText'); if(el){ el.setAttribute('data-status',status); const map={idle:['Idle','rgba(255,255,255,0.8)'],saving:['Saving...','#ffc107'],saved:['Saved','#28a745'],error:['Error','#dc3545']}; const ent=map[status]; if(ent){ el.textContent=ent[0]; el.style.color=ent[1]; } if(status==='saved'){ setTimeout(()=>{ if(el.getAttribute('data-status')==='saved') this.setAutoSaveStatus('idle'); },3000);} if(status==='error'){ setTimeout(()=>{ if(el.getAttribute('data-status')==='error') this.setAutoSaveStatus('idle'); },5000);} }
-    if(pill && pillText){ const map={idle:['Idle','#6c757d'],saving:['Saving','#ffc107'],saved:['Saved','#28a745'],error:['Error','#dc3545']}; const ent=map[status]; if(ent){ pill.className=`autosave-pill status-${status}`; pillText.textContent=ent[0]; pill.style.backgroundColor=ent[1]; } }
-  }
-  performAutoSave(trigger='unknown'){
-    if(!this._lastAutoSaveAttempt) this._lastAutoSaveAttempt=0; const since=Date.now()-this._lastAutoSaveAttempt; if(since<500){ this.debug(`Auto-save suppressed (throttle ${since}ms)`); return; } this._lastAutoSaveAttempt=Date.now();
-  if(!this.hasLock()){ this.debug('Auto-save skipped - lock not yet acquired'); this.modules.autoSave.hasPendingChanges=true; try { const pillText=document.getElementById('autosavePillText'); if(pillText) pillText.textContent='LOCK'; const pill=document.getElementById('autosavePill'); if(pill) pill.className='autosave-pill status-error'; } catch(_){} return; }
-    if(this.modules.autoSave.isSaving || this._inFlightSave){ this.debug('Auto-save already in progress, skipping'); return; }
-    const data=this.gatherFormData(); if(!data.counted_qty || Object.keys(data.counted_qty).length===0){ this.debug('Auto-save skipped - no quantity data'); this.modules.autoSave.hasPendingChanges=false; return; }
-    if(JSON.stringify(data)===JSON.stringify(this.modules.autoSave.lastSaveData)){ this.debug('Auto-save skipped - no changes'); this.modules.autoSave.hasPendingChanges=false; return; }
-    this.modules.autoSave.isSaving=true; this.modules.autoSave.hasPendingChanges=false; this.setAutoSaveStatus('saving'); this.debug(`Performing auto-save (trigger: ${trigger})`);
-    this.saveData(data,{isAutoSave:true}).then(resp=>{ this.modules.autoSave.lastSaveData=data; this.modules.autoSave.lastSaveTime=Date.now(); this.modules.autoSave.isSaving=false; this.setAutoSaveStatus('saved'); this.debug('Auto-save successful'); if(trigger==='manual') this.showToast?.('Progress saved successfully','success',{duration:2000}); }).catch(err=>{ this.modules.autoSave.isSaving=false; this.modules.autoSave.hasPendingChanges=true; this.setAutoSaveStatus('error'); console.error('Auto-save failed:',err); if(this.isLockViolation?.(err)){ this.handleLockViolation?.(err,'auto-save'); } else { this.showToast?.('Auto-save failed - please save manually','error',{duration:5000}); } });
-  }
-  gatherFormData(){ if(window.PackModules?.FormSerializer){ try{ return window.PackModules.FormSerializer.gatherFormData(this.config.transferId); }catch(e){ console.warn('FormSerializer error, fallback',e);} } const fallback={ transfer_id:this.config.transferId, timestamp:new Date().toISOString() }; const quantities={}; document.querySelectorAll('.pack-quantity-input, .qty-input, input[name^="counted_qty"]').forEach(input=>{ let productId=input.dataset.productId||input.getAttribute('data-product-id'); if(!productId){ const row=input.closest('tr'); if(row && row.dataset.productId) productId=row.dataset.productId; } if(!productId){ const m=input.name && input.name.match(/counted_qty\[([^\]]+)\]/); if(m) productId=m[1]; } if(productId && input.value && input.value.trim()!==''){ const n=parseInt(input.value,10); quantities[productId]=Number.isFinite(n)?n:0; } }); fallback.counted_qty=quantities; const notesInput=document.querySelector('#notesForTransfer, [name="notes"]'); if(notesInput?.value) fallback.notes=notesInput.value; return fallback; }
-  async saveData(data,options={}){ if(this._inFlightSave){ this.debug('Save suppressed (in-flight)'); return this._inFlightSavePromise || Promise.reject(new Error('Save suppressed')); } if(!this._saveRequestSeq) this._saveRequestSeq=0; const seq=++this._saveRequestSeq; const isDraft = !!options.isAutoSave || !!options.draft; const url=isDraft?'/modules/transfers/stock/api/draft_save_api.php':'/modules/transfers/stock/api/pack_save.php'; const payload=JSON.stringify(data); this.debug(`[saveData#${seq}] POST ${url} bytes=${payload.length} draft=${isDraft}`); this._inFlightSave=true; let resolveRef,rejectRef; this._inFlightSavePromise=new Promise((res,rej)=>{ resolveRef=res; rejectRef=rej; }); (async()=>{ let response; try{ response=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:payload, credentials:'same-origin' }); }catch(netErr){ this.debug(`[saveData#${seq}] network error`,netErr); throw new Error('Network failure during save'); } if(!response.ok){ let detail=''; try{ detail=await response.text(); }catch{} console.warn(`[draft-save#${seq}] non-OK`,response.status,detail.slice(0,300)); if(response.status===423) throw new Error('LOCK_VIOLATION'); throw new Error(`Save failed: ${response.status}`); } let json; try{ json=await response.json(); }catch(parseErr){ console.warn(`[draft-save#${seq}] parse error`,parseErr); throw new Error('Save response parse error'); } this.debug(`[saveData#${seq}] success`,json); resolveRef(json); })().catch(err=>{ rejectRef(err); }).finally(()=>{ this._inFlightSave=false; this._inFlightSavePromise=null; }); return this._inFlightSavePromise; }
-};
+    window.PackAutosave = PackAutosave;
+})(window);

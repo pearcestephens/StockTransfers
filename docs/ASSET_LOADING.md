@@ -1,4 +1,6 @@
-# 🚀 Auto Asset Loading System
+# (Consolidated) 🚀 Auto Asset Loading System
+
+> Core concepts and usage patterns now captured in `TRANSFERS_MODULE_ARCHITECTURE.md` (§4). This document is legacy depth; update only if loader internals drastically change.
 
 ## Overview
 The new asset loading system automatically discovers and includes all CSS and JS files from the `assets/` directories, eliminating the need to manually manage `<link>` and `<script>` tags.

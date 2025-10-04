@@ -5,6 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/config.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/ApiResponder.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/JsonGuard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/HttpGuard.php';
+require_once __DIR__ . '/_lib/simple_lock_guard.php';
 
 use Modules\Transfers\Stock\Services\TrackingService;
 use Modules\Transfers\Stock\Lib\AccessPolicy;
@@ -30,6 +31,9 @@ if ($transferId<=0 || $parcelId<=0 || trim($tracking)==='') {
 if (!AccessPolicy::canAccessTransfer((int)$_SESSION['userID'], $transferId)) {
     ApiResponder::json(['success'=>false,'error'=>'Forbidden'], 403);
 }
+
+// Enforce exclusive lock ownership
+require_lock_or_423('transfer:'.$transferId, (int)$_SESSION['userID'], $body['lock_token'] ?? null);
 
 (new TrackingService())->setParcelTracking($parcelId, $tracking, $carrier, $transferId);
 ApiResponder::json(['success'=>true], 200);

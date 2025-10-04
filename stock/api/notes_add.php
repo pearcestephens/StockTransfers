@@ -5,7 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/config.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/ApiResponder.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/JsonGuard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/assets/functions/HttpGuard.php';
-require_once __DIR__ . '/_lib/ServerLockGuard.php';
+require_once __DIR__ . '/_lib/simple_lock_guard.php';
 
 use Modules\Transfers\Stock\Services\NotesService;
 use Modules\Transfers\Stock\Lib\AccessPolicy;
@@ -17,11 +17,12 @@ JsonGuard::csrfCheckOptional();
 JsonGuard::idempotencyGuard();
 HttpGuard::requireJsonContent();
 
-$guard = ServerLockGuard::getInstance();
-$userId = $guard->validateAuthOrDie();
+if(!isset($_SESSION['userID'])){ ApiResponder::json(['success'=>false,'error'=>'Auth required'],401); }
+$userId = (int)$_SESSION['userID'];
 
 $body = JsonGuard::readJson();
-$transferId = $guard->extractTransferIdOrDie($body);
+$transferId = (int)($body['transfer_id'] ?? 0);
+if($transferId<=0){ ApiResponder::json(['success'=>false,'error'=>'transfer_id required'],400); }
 $text = (string)($body['note_text'] ?? '');
 
 if (trim($text) === '') {
@@ -29,7 +30,7 @@ if (trim($text) === '') {
 }
 
 // CRITICAL: Validate lock ownership before adding notes
-$guard->validateLockOrDie($transferId, $userId, 'add note');
+require_lock_or_423('transfer:'.$transferId, $userId, $body['lock_token'] ?? null);
 
 if (!AccessPolicy::canAccessTransfer($userId, $transferId)) {
     ApiResponder::json(['success'=>false,'error'=>'Forbidden'], 403);

@@ -1,4 +1,6 @@
-# Pack.php Modular Refactoring - Summary
+# (Consolidated) Pack.php Modular Refactoring - Summary
+
+> Architectural outcomes incorporated into `TRANSFERS_MODULE_ARCHITECTURE.md` (§3). This file remains as the original change record.
 
 ## 📊 Transformation Overview
 

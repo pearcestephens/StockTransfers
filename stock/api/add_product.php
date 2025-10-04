@@ -7,15 +7,13 @@
  */
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/app.php';
-require_once __DIR__ . '/_lib/ServerLockGuard.php';
+require_once __DIR__ . '/_lib/simple_lock_guard.php';
 
 header('Content-Type: application/json');
 
 try {
-    $guard = ServerLockGuard::getInstance();
-    
-    // Validate authentication
-    $userId = $guard->validateAuthOrDie();
+    if(!isset($_SESSION['userID'])) { echo json_encode(['success'=>false,'message'=>'Auth required']); exit; }
+    $userId = (int)$_SESSION['userID'];
     
     // Get JSON input
     $input = file_get_contents('php://input');
@@ -27,10 +25,10 @@ try {
     }
     
     // Extract and validate transfer ID
-    $transferId = $guard->extractTransferIdOrDie($data);
-    
-    // CRITICAL: Validate lock ownership before allowing product addition
-    $guard->validateLockOrDie($transferId, $userId, 'add product');
+    $transferId = (int)($data['transfer_id'] ?? 0);
+    if($transferId<=0){ echo json_encode(['success'=>false,'message'=>'transfer_id required']); exit; }
+    // Enforce lock ownership (simple_locks)
+    require_lock_or_423('transfer:'.$transferId, $userId, $data['lock_token'] ?? null);
     
     // Validate required fields
     $productId = (int)($data['product_id'] ?? 0);

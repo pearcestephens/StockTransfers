@@ -1,0 +1,3 @@
+/* Backup of deleted gateway adapter: assets/js/pack-lock.gateway-adapter.js
+   No longer needed after migration to simple_lock.php endpoint + SSE events. */
+(function(){ console.log('Deprecated gateway adapter removed – see simple-lock.js'); })();

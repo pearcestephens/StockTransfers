@@ -1,0 +1,71 @@
+/* lock-ui.css
+ * Transfer Pack Lock + Spectator + Diagnostics UI Styles
+ * Extracted from inline styles in pack.view.php (2025-10-02)
+ * Purpose: Provide consistent styling for lock badge, spectator/request bar,
+ *          handover modal, diagnostic modal and related animations.
+ * Notes: Keep file <25KB (currently well below). Any changes must remain
+ *        namespace-safe (IDs/classes specific to transfer pack context).
+ */
+
+/* Lock badge */
+.lock-badge { font-size:0.55em; padding:4px 10px; border-radius:14px; font-weight:600; letter-spacing:.5px; display:inline-block; line-height:1; transition:background .25s ease, color .25s ease, border-color .25s ease; }
+.lock-badge--unlocked { background:#6c757d; color:#fff; border:1px solid #6c757d; }
+.lock-badge--mine { background:#dc3545; color:#fff; border:1px solid #dc3545; }
+.lock-badge--other { background:#b02a37; color:#fff; border:1px solid #b02a37; }
+.lock-badge--conflict { background:#ffc107; color:#212529; border:1px solid #e0a800; }
+.lock-badge.pulse { box-shadow:0 0 0 0 rgba(255,255,255,.6); animation: lockPulse 1.8s ease-out 1; }
+@keyframes lockPulse { 0% { box-shadow:0 0 0 0 rgba(255,255,255,.65);} 70% {box-shadow:0 0 0 10px rgba(255,255,255,0);} 100% {box-shadow:0 0 0 0 rgba(255,255,255,0);} }
+
+/* Accessibility helper */
+.visually-hidden { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0 0 0 0)!important; white-space:nowrap!important; border:0!important; }
+
+/* Spectator / request bar & blur state */
+body.spectator-mode { position:relative; }
+.spectator-blur-wrap *:not(#transferItemsTable):not(#transferItemsTable *):not(#lockRequestBar):not(#lockRequestBar *):not(#lockHandoverModal):not(#lockHandoverModal *):not(#lockHandoverModalBackdrop):not(#lockDiagModal):not(#lockDiagModal *) { pointer-events:none !important; opacity:0.6; }
+#lockRequestBar { position:fixed; left:0; right:0; bottom:0; background:linear-gradient(90deg,#4c1d95,#6d28d9,#7e22ce); color:#fff; padding:10px 18px; z-index:9999; display:none; align-items:center; justify-content:space-between; font-size:14px; box-shadow:0 -2px 10px rgba(0,0,0,.35); font-weight:500; }
+#lockRequestBar.visible { display:flex; }
+#lockRequestBar button { font-weight:600; border-radius:6px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.15); color:#fff; padding:6px 14px; backdrop-filter:blur(4px); }
+#lockRequestBar button:hover { background:rgba(255,255,255,.28); }
+#lockRequestCountdown { font-variant-numeric:tabular-nums; margin-left:8px; font-weight:600; }
+#lockRequestBar.lock-owned { background:linear-gradient(90deg,#be123c,#dc2626,#b91c1c); }
+#lockRequestBar.lock-same-owner { background:linear-gradient(90deg,#dc2626,#ef4444,#f87171); }
+#lockRequestBar.lock-owned .status-label, #lockRequestBar.lock-same-owner .status-label { font-weight:700; letter-spacing:.5px; }
+
+/* Handover modal (future handshake) */
+#lockHandoverModalBackdrop { position:fixed; inset:0; background:rgba(23,15,46,.78); display:flex; align-items:center; justify-content:center; z-index:10000; animation:fadeIn .25s ease; }
+#lockHandoverModal { background:#1f1139; border:1px solid #5b21b6; padding:28px 34px; max-width:480px; width:100%; border-radius:18px; box-shadow:0 10px 40px -5px rgba(80,0,160,.6),0 0 0 1px rgba(255,255,255,.08) inset; color:#f5f3ff; font-size:15px; line-height:1.5; animation:popIn .35s cubic-bezier(.16,.8,.26,1); }
+#lockHandoverModal h3 { font-size:20px; font-weight:700; margin:0 0 6px; letter-spacing:.5px; }
+#lockHandoverModal p { margin:0 0 14px; opacity:.9; }
+#lockHandoverModal .actions { display:flex; gap:12px; justify-content:flex-end; margin-top:10px; }
+#lockHandoverModal button { flex:0 0 auto; }
+@keyframes popIn {0%{transform:scale(.85) translateY(8px); opacity:0;}100%{transform:scale(1) translateY(0); opacity:1;}}
+@keyframes fadeIn {0%{opacity:0;}100%{opacity:1;}}
+
+/* Diagnostic modal */
+#lockDiagModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:10001; align-items:center; justify-content:center; animation:fadeIn .2s ease; }
+#lockDiagModal.visible { display:flex; }
+#lockDiagContent { background:#1a1a2e; border:2px solid #6d28d9; border-radius:12px; width:90%; max-width:900px; max-height:90vh; overflow:auto; color:#e0e0e0; box-shadow:0 20px 60px rgba(0,0,0,.8); }
+#lockDiagContent h3 { background:linear-gradient(90deg,#6d28d9,#8b5cf6); color:#fff; padding:16px 20px; margin:0; font-size:18px; font-weight:700; border-radius:10px 10px 0 0; display:flex; justify-content:space-between; align-items:center; }
+#lockDiagContent h3 button { background:rgba(255,255,255,.2); border:none; color:#fff; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+#lockDiagContent h3 button:hover { background:rgba(255,255,255,.35); }
+.diag-section { padding:16px 20px; border-bottom:1px solid #333; }
+.diag-section h4 { color:#a855f7; font-size:15px; font-weight:600; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+.diag-grid { display:grid; grid-template-columns:180px 1fr; gap:8px 16px; font-size:13px; }
+.diag-label { color:#9ca3af; font-weight:600; }
+.diag-value { color:#fff; font-family:monospace; word-break:break-all; }
+.diag-value.good { color:#10b981; }
+.diag-value.bad { color:#ef4444; }
+.diag-value.warn { color:#f59e0b; }
+.diag-events { max-height:200px; overflow-y:auto; background:#0f0f1e; border:1px solid #444; border-radius:6px; padding:10px; font-family:monospace; font-size:12px; }
+.diag-event { padding:4px 0; border-bottom:1px solid #2a2a3e; }
+.diag-event:last-child { border:none; }
+.diag-event-time { color:#6b7280; }
+.diag-event-type { color:#a855f7; font-weight:600; }
+.diag-actions { display:flex; gap:10px; padding:16px 20px; background:#0f0f1e; border-radius:0 0 10px 10px; }
+.diag-actions button { flex:1; padding:10px; border:none; border-radius:6px; font-weight:600; cursor:pointer; transition:all .2s; }
+.diag-actions .btn-copy { background:#6d28d9; color:#fff; }
+.diag-actions .btn-copy:hover { background:#7c3aed; }
+.diag-actions .btn-refresh { background:#8b5cf6; color:#fff; }
+.diag-actions .btn-refresh:hover { background:#a855f7; }
+.diag-actions .btn-close { background:#374151; color:#fff; }
+.diag-actions .btn-close:hover { background:#4b5563; }

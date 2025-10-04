@@ -1,4 +1,6 @@
-# Stock Transfers Module — Function & View Catalogue
+# (Consolidated) Stock Transfers Module — Function & View Catalogue
+
+> High-level architectural synthesis & quick references have moved to `TRANSFERS_MODULE_ARCHITECTURE.md`. This catalogue remains the exhaustive index; keep granular updates here.
 
 > Exhaustive index of functions, class methods, and rendered views within `/modules/transfers`. Each entry captures the current responsibility, integration notes, and maturity status (Active, Legacy, In Progress).
 

@@ -17,9 +17,9 @@ header('X-Content-Type-Options: nosniff');
 
 require_once $_SERVER['DOCUMENT_ROOT'].'/modules/transfers/_local_shims.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/app.php';
-require_once __DIR__ . '/_lib/ServerLockGuard.php';
+require_once __DIR__ . '/_lib/simple_lock_guard.php';
 
-use Modules\Transfers\Stock\Services\PackLockService;
+// PackLockService removed: using simple_locks guard
 
 $REQ_ID = bin2hex(random_bytes(8));
 function env_ok(array $data): array { return ['ok'=>true,'request_id'=>$GLOBALS['REQ_ID'],'data'=>$data]; }
@@ -28,8 +28,8 @@ function send(array $e,int $code=200){ http_response_code($code); echo json_enco
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') send(env_err('METHOD_NOT_ALLOWED','POST required'),405);
 
-$guard = ServerLockGuard::getInstance();
-$userId = $guard->validateAuthOrDie();
+if(!isset($_SESSION['userID'])){ send(env_err('UNAUTH','Auth required'),401); }
+$userId = (int)$_SESSION['userID'];
 
 $raw = file_get_contents('php://input') ?: '';
 $in = json_decode($raw,true);
@@ -38,10 +38,9 @@ if (!is_array($in)) send(env_err('INVALID_JSON','JSON body required'),400);
 // Delete branch
 if (($_GET['action'] ?? '') === 'delete') {
   $id = (int)($in['id'] ?? 0); 
-  $transferId = $guard->extractTransferIdOrDie($in);
-  
-  // CRITICAL: Validate lock ownership for delete
-  $guard->validateLockOrDie($transferId, $userId, 'delete tracking');
+  $transferId = (int)($in['transfer_id'] ?? 0);
+  if($transferId<=0) send(env_err('MISSING_TRANSFER','transfer_id required'),400);
+  require_lock_or_423('transfer:'.$transferId, $userId, $in['lock_token'] ?? null);
   
   try {
     $pdo = pdo();
@@ -53,7 +52,8 @@ if (($_GET['action'] ?? '') === 'delete') {
 
 if (!($in['commit'] ?? false)) send(env_err('SUBMIT_ONLY','This endpoint saves only on explicit submit (commit:true).'));
 
-$transferId = $guard->extractTransferIdOrDie($in);
+$transferId = (int)($in['transfer_id'] ?? 0);
+if($transferId<=0) send(env_err('MISSING_TRANSFER','transfer_id required'),400);
 $mode        = (string)($in['mode'] ?? 'manual');
 $tracking    = isset($in['tracking']) ? strtoupper(trim((string)$in['tracking'])) : null;
 $carrierId   = isset($in['carrier_id']) ? (int)$in['carrier_id'] : null;
@@ -61,7 +61,7 @@ $carrierCode = (string)($in['carrier_code'] ?? '');
 $notes       = isset($in['notes']) ? trim((string)$in['notes']) : null;
 
 // CRITICAL: Validate lock ownership for create
-$guard->validateLockOrDie($transferId, $userId, 'add tracking');
+require_lock_or_423('transfer:'.$transferId, $userId, $in['lock_token'] ?? null);
 
 if (!in_array($mode,['manual','internal'],true)) send(env_err('VALIDATION','mode must be manual|internal'));
 if ($mode==='manual') {
@@ -125,21 +125,5 @@ function format_row(array $r): array {
     'notes'=>$r['notes'],
     'created_at'=>$r['created_at']
   ];
-}
-// Helper: determine if current session owns pack lock via PackLockService or session structure
-function lock_owner(int $transferId): bool {
-  try {
-    // Preferred: use PackLockService if available (DB-level authoritative)
-    $svc = new PackLockService();
-    $lock = $svc->getLock($transferId);
-    if ($lock && (int)$lock['user_id'] === (int)($_SESSION['userID'] ?? 0)) {
-      return true;
-    }
-  } catch (Throwable $e) { /* fallback to session */ }
-  $sess = $_SESSION['pack_lock'] ?? null;
-  if (is_array($sess) && (int)($sess['transfer_id'] ?? 0) === $transferId) {
-    if (!isset($sess['exp']) || (int)$sess['exp'] >= time()) return true;
-  }
-  return false;
 }
         'notes'=>$notes,

@@ -1,0 +1,14 @@
+Backed up & deleted on 2025-10-02:
+_check_lock_table.php
+_debug_popup.html
+_debug_schema.php
+_diag.php
+_diag_headers.php
+_workflow_debug.php
+_test_api.php
+_test_auto_grant.php
+_test_auto_grant_live.php
+_test_ownership_request.php
+_syntax_test.html
+_table_test.php
+_test_suite.html

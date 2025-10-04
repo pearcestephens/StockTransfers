@@ -1,0 +1,13 @@
+/**
+ * Receive Page Specific Styles
+ * 
+ * Additional styles specific to receive page only
+ */
+
+/* Receive-specific styles */
+.receive-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Additional receive styles here as needed */
